@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net471</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>ShipShuffle</AssemblyName>
+    <RootNamespace>ShipShuffle</RootNamespace>
+    <GameManagedDir Condition="'$(GameManagedDir)' == ''">C:\Steam Games\steamapps\common\Sailwind\Sailwind_Data\Managed</GameManagedDir>
+    <ReferenceDir Condition="'$(ReferenceDir)' == ''">$(MSBuildProjectDirectory)\.local\references</ReferenceDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src\*.cs" />
+    <Compile Include="$(IntermediateOutputPath)BuildInfo.g.cs" />
+  </ItemGroup>
+  <!-- Build tag (UTC build time) logged at load. -->
+  <Target Name="WriteBuildInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <BuildUtc>$([System.DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))</BuildUtc>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)BuildInfo.g.cs" Overwrite="true"
+      Lines="namespace ShipShuffle { internal static class BuildInfo { internal const string Utc = &quot;$(BuildUtc)&quot;%3B } }" />
+  </Target>
+  <ItemGroup>
+    <Reference Include="BepInEx"><HintPath>$(ReferenceDir)\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(ReferenceDir)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(GameManagedDir)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(GameManagedDir)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(GameManagedDir)\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AnimationModule"><HintPath>$(GameManagedDir)\UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(GameManagedDir)\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TerrainModule"><HintPath>$(GameManagedDir)\UnityEngine.TerrainModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TerrainPhysicsModule"><HintPath>$(GameManagedDir)\UnityEngine.TerrainPhysicsModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
