@@ -58,6 +58,8 @@ If you disable or remove Ship Shuffle, unsold boats return to their original por
 
 ## Compatibility and limitations
 
+No known incompatibilities.
+
 Boats added by mods are detected automatically, but a boat that can't be moved stays at its original location. Mod boats are grouped by measured hull dimensions. Small hulls are at most 13 m long and 4.4 m across, Medium hulls are at most 26 m long and 6.8 m across, and larger hulls belong to the Large group.
 
 - Large boats aren't sent to Sage Hills, Mirage Mountain, Aestra Abbey or Old Ankh Town. [HMS Leopard](https://github.com/winterspices/HMSLeopard) isn't sent to Neverdin.
