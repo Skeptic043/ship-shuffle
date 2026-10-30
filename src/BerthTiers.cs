@@ -65,6 +65,8 @@ namespace ShipShuffle
         internal IList<BerthSlot> Slots = new BerthSlot[0];
         // Terrain height relative to sea level (see BerthInput.Ground); null without terrain.
         internal Func<Vec2, float?> Ground;
+        // Live solid-scene acceptance, absent during unloaded planning.
+        internal Func<Candidate, string> SolidProblem;
 
         internal string Name(int cleat) => Names != null && cleat >= 0 && cleat < Names.Length ? Names[cleat] : "cleat " + cleat;
     }
@@ -278,7 +280,7 @@ namespace ShipShuffle
             {
                 BoatPos = (reference.Points[0] + reference.Points[reference.Points.Length - 1]) * 0.5f, BoatForward = direction,
                 AlternateOffset = new Vec2(0f, 0f), Obstacles = port.Obstacles, NoRecovery = true, OtherPiers = frame.DockSegments,
-                Ground = port.Ground
+                Ground = port.Ground, SolidProblem = port.SolidProblem
             };
             frame.Standoff = NoRecoveryStandoff;
             frame.StationOrigin = frame.Base.BoatPos;
@@ -445,7 +447,7 @@ namespace ShipShuffle
             {
                 Chain = chain, Available = new bool[count], Unavailable = new string[count], Names = new string[count],
                 BoatPos = port.BoatPos, BoatForward = port.BoatForward, AlternateOffset = port.AlternateOffset,
-                Obstacles = port.Obstacles
+                Obstacles = port.Obstacles, SolidProblem = port.SolidProblem
             };
             for (var i = 0; i < count; ++i)
             {
@@ -525,8 +527,12 @@ namespace ShipShuffle
                     if (ground != null) DockGeometry.Reject(candidate, Rejection.ShallowGround, ground);
                     else if (DockGeometry.CheckLines(candidate, hull, port.Cleats[front], port.Cleats[back]))
                     {
-                        candidate.Accepted = true;
-                        candidate.Reason = "accepted" + (waive ? " (recovery gaps waived)" : "");
+                        if (!DockGeometry.Accept(candidate, input, "accepted" + (waive ? " (recovery gaps waived)" : "")))
+                        {
+                            var normal = forward.Perp;
+                            if (Vec2.Dot(normal, slot.Center - (port.Cleats[front] + port.Cleats[back]) * 0.5f) < 0f) normal = -normal;
+                            DockGeometry.TieOff(candidate, input, hull, normal, port.Cleats[front], port.Cleats[back], input.OtherPiers, waive);
+                        }
                     }
                 }
                 else
@@ -534,7 +540,7 @@ namespace ShipShuffle
                     // Away from the owner's cleats, along the berth normal.
                     var normal = forward.Perp;
                     if (Vec2.Dot(normal, slot.Center - (port.Cleats[front] + port.Cleats[back]) * 0.5f) < 0f) normal = -normal;
-                    DockGeometry.TieOff(candidate, input, hull, normal, port.Cleats[front], port.Cleats[back], input.OtherPiers);
+                    DockGeometry.TieOff(candidate, input, hull, normal, port.Cleats[front], port.Cleats[back], input.OtherPiers, waive);
                 }
                 if (best == null || candidate.Accepted && (!best.Accepted ||
                     Math.Max(candidate.FrontLine, candidate.BackLine) < Math.Max(best.FrontLine, best.BackLine)))
@@ -739,7 +745,7 @@ namespace ShipShuffle
                 Chain = chain, Available = new bool[count], Unavailable = new string[count], Names = new string[count],
                 BoatPos = frame.Base.BoatPos, BoatForward = frame.Base.BoatForward, AlternateOffset = frame.Base.AlternateOffset,
                 Obstacles = frame.Base.Obstacles, NoRecovery = frame.NoRecovery, OtherPiers = others,
-                Ground = frame.Base.Ground
+                Ground = frame.Base.Ground, SolidProblem = frame.Base.SolidProblem
             };
             for (var i = 0; i < count; ++i)
             {
@@ -955,8 +961,7 @@ namespace ShipShuffle
             if (!candidate.Root.IsFinite) return DockGeometry.Reject(candidate, "Station pose produced a non-finite position.");
             var ground = DockGeometry.GroundProblem(candidate.Hull, input.Ground);
             if (ground != null) return DockGeometry.Reject(candidate, Rejection.ShallowGround, ground);
-            candidate.Accepted = true;
-            candidate.Reason = "accepted";
+            DockGeometry.Accept(candidate, input);
             return candidate;
         }
 
@@ -1037,7 +1042,7 @@ namespace ShipShuffle
         // with no clearance, line-length, terrain or port-policy checks: it
         // passed them all when the layout was generated. Moored (tiers 1-3)
         // when both stored cleats are usable, with the ropes and line lengths
-        // the relocator and MooringSlack use for that pose; otherwise held
+        // the relocator uses for that pose; otherwise held
         // (tier 4) at the same pose, with fallback saying why. A line beyond
         // what a native rope reaches (NativeRopeMaxLine) is not usable.
         internal static Candidate StoredBerth(HullSpec hull, Vec2 root, Vec2 forward, int tier, int side, Vec2? frontCleat, Vec2? backCleat,

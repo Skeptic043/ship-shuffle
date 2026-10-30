@@ -13,7 +13,30 @@ namespace ShipShuffle
         private static readonly FieldInfo SpringField =
             AccessTools.Field(typeof(PickupableBoatMooringRope), "mooredToSpring");
 
+        // Native Awake records where a rope rests twice: initialPos in its
+        // initialParent's frame (Update measures line length from it) and
+        // springAnchor in the hull's frame (the spring pulls there). Both are
+        // the same point on a vanilla hull.
+        private static readonly FieldInfo InitialPosField = AccessTools.Field(typeof(PickupableBoatMooringRope), "initialPos");
+        private static readonly FieldInfo InitialParentField = AccessTools.Field(typeof(PickupableBoatMooringRope), "initialParent");
+        private static readonly FieldInfo SpringAnchorField = AccessTools.Field(typeof(PickupableBoatMooringRope), "springAnchor");
+        internal const float RopeAnchorTolerance = 1f;
+
         internal static bool CanReadSpring => SpringField != null;
+
+        // Why a moored rope's native line length would not describe its own
+        // spring, or null (also when the native fields cannot be read).
+        internal static string GeometryProblem(PickupableBoatMooringRope rope, Rigidbody body)
+        {
+            if (rope == null || body == null || InitialPosField == null || InitialParentField == null || SpringAnchorField == null)
+                return null;
+            if (!(InitialParentField.GetValue(rope) is Transform parent) || parent == null) return "rope " + rope.name + " has no rest parent";
+            var measured = parent.TransformPoint((Vector3)InitialPosField.GetValue(rope));
+            var anchored = body.transform.TransformPoint((Vector3)SpringAnchorField.GetValue(rope));
+            var gap = Vector3.Distance(measured, anchored);
+            return gap <= RopeAnchorTolerance ? null
+                : "rope " + rope.name + " measures its length from a point " + gap.ToString("F1") + " m from where it is tied to the hull";
+        }
 
         internal static SpringJoint GetSpring(PickupableBoatMooringRope rope) =>
             rope != null ? SpringField?.GetValue(rope) as SpringJoint : null;

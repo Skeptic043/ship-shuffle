@@ -19,6 +19,8 @@ namespace ShipShuffle
         internal static void Cancel()
         {
             ++generation;
+            BoatRelocator.RestoreAllGuards();
+            PlacementCoordinator.ClearAll();
             LeopardSaleRig.Cancel();
         }
 

@@ -88,11 +88,10 @@ namespace ShipShuffle
         // Hills, Mirage Mountain, Aestra Abbey, Old Ankh Town).
         internal static readonly HashSet<Identity> LargeBoatExcludedPorts = new HashSet<Identity> { SageHills, MirageMountain, Monastery, Coffee };
 
-        // Boat/port pairs to avoid: HMS Leopard grounds at Neverdin.
-        internal static readonly HashSet<Tuple<Identity, Identity>> BoatPortExclusions = new HashSet<Tuple<Identity, Identity>>
-        {
-            Tuple.Create(Leopard, Neverdin)
-        };
+        // Exact boat/port pairs may be excluded without adding special-case
+        // planner rules. There are currently no built-in pair exclusions.
+        internal static readonly HashSet<Tuple<Identity, Identity>> BoatPortExclusions =
+            new HashSet<Tuple<Identity, Identity>>();
 
         // Secret destinations, offered only with IncludeHiddenPorts.
         internal static bool IsHiddenPort(Identity port) => port.Equals(Chronos) || port.Equals(Saffron);

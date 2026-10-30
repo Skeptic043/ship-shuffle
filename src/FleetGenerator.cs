@@ -161,7 +161,7 @@ namespace ShipShuffle
                 var moved = pending.FirstOrDefault(item => item.Boat == boat);
                 if (moved != null && moved.Plan != null)
                 {
-                    document.Records.Add(ToRecord(moved));
+                    document.Records.Add(ToRecord(moved.Plan));
                     if (!plugin.DebugEnabled) continue;
                     var c = moved.Plan.Candidate;
                     plugin.DebugLog("  Assignment: " + boat.Label + " -> " + moved.Plan.Site.Port.Label + ", " + moved.Plan.Describe() +
@@ -334,15 +334,14 @@ namespace ShipShuffle
         // in the island's frame (x, z); load rebuilds it at island-local y 0
         // (BerthResolver.StationPose), so store and restore use the same
         // plane and the spawn height never skews x/z.
-        private static AssignmentRecord ToRecord(Pending item)
+        private static AssignmentRecord ToRecord(BerthPlan plan)
         {
-            var plan = item.Plan;
             var port = plan.Site.Port;
             var island = plan.Site.Island;
             var local = island.InverseTransformPoint(new Vector3(plan.Position.x, island.position.y, plan.Position.z));
             var record = new AssignmentRecord
             {
-                BoatIndex = item.Boat.Id.Index, BoatName = item.Boat.Id.Name, PortIndex = port.Index, PortName = port.IdentityName,
+                BoatIndex = plan.Boat.Index, BoatName = plan.Boat.IdentityName, PortIndex = port.Index, PortName = port.IdentityName,
                 Tier = plan.Tier, LocalX = local.x, LocalZ = local.z, YawDegrees = plan.LocalYaw
             };
             if (plan.Held) record.Kind = RecordKind.Held;
@@ -353,6 +352,23 @@ namespace ShipShuffle
                 record.Side = plan.Tier == 3 ? plan.Candidate.Side : 0;
             }
             return record;
+        }
+
+        // Finalization may select a different berth at the same port. Keep the
+        // current in-memory save record authoritative without changing format;
+        // Sailwind persists GameState.modData on its normal save path.
+        internal static void UpdateStoredAssignment(BerthPlan plan)
+        {
+            if (plan == null || GameState.modData == null || !GameState.modData.TryGetValue(AssignmentStore.Key, out var text)) return;
+            var errors = new List<string>();
+            var document = AssignmentStore.Parse(text, errors);
+            if (document == null) throw new InvalidOperationException("stored assignments could not be read during finalization");
+            var index = document.Records.FindIndex(record => record.BoatIndex == plan.Boat.Index &&
+                string.Equals(record.BoatName, plan.Boat.IdentityName, StringComparison.Ordinal));
+            if (index < 0) throw new InvalidOperationException("the finalized boat has no stored assignment");
+            document.Records[index] = ToRecord(plan);
+            GameState.modData[AssignmentStore.Key] = AssignmentStore.Format(document);
+            Plugin.Instance?.DebugLog("Placement finalization: updated the in-memory assignment for " + plan.Boat.Label + ".");
         }
 
         // A saved placement at its exact stored pose. Moored on its stored

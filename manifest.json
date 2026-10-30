@@ -1,6 +1,6 @@
 {
   "name": "Ship_Shuffle",
-  "version_number": "1.0.0",
+  "version_number": "1.0.1",
   "website_url": "https://github.com/Skeptic043/ship-shuffle",
   "description": "Shuffles Sailwind's boats for sale between ports when you start a new game.",
   "dependencies": [

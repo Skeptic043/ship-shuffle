@@ -66,6 +66,9 @@ namespace ShipShuffle
         // The root pose in the island's frame (stored in the save).
         internal Vector3 LocalPosition;
         internal float LocalYaw;
+        // Set once PlacementCoordinator has finished with the boat (checked
+        // against live scenery, or given up); the velocity guard waits for it.
+        internal bool Finalized;
 
         internal string Describe() => "tier " + Tier + (Held ? " station-kept spot " + DockGeometry.F(Candidate.Outward) +
             " m outward" : " " + FrontId + " / " + BackId + (Candidate.Side != 0 ? " side " + Candidate.Side : "") +
@@ -313,7 +316,7 @@ namespace ShipShuffle
         // planned: berths already given to other boats at this port (shared
         // shipyards); their hulls and cleats are taken.
         internal static PortInput MakePortInput(DockSite site, BoatEntry boat, Occupancy occupancy, IEnumerable<BoatEntry> saleBoats,
-            IEnumerable<PlannedBerth> planned = null)
+            IEnumerable<PlannedBerth> planned = null, bool liveScenery = false)
         {
             var count = site.IslandCleats.Length;
             var input = new PortInput
@@ -327,7 +330,8 @@ namespace ShipShuffle
                 StationPolicy = KnownIdentities.StationPolicyFor(site.Port.Identity),
                 StationRegion = KnownIdentities.StationRegionFor(site.Port.Identity),
                 BoatPos = site.BoatPos, BoatForward = site.BoatForward,
-                AlternateOffset = site.AlternateOffset, Obstacles = occupancy.ObstaclesFor(boat.Body)
+                AlternateOffset = site.AlternateOffset, Obstacles = occupancy.ObstaclesFor(boat.Body),
+                SolidProblem = liveScenery ? candidate => LiveScenery.Problem(site, boat, candidate) : null
             };
             if (site.Marker != null)
             {
@@ -516,6 +520,20 @@ namespace ShipShuffle
             }
             plan.LocalPosition = site.Island.InverseTransformPoint(plan.Position);
             return plan;
+        }
+
+        // The same berth with its world pose rebuilt from the island-local one
+        // (the world shifts under a waiting plan; the island frame does not).
+        internal static BerthPlan Refreshed(BerthPlan plan)
+        {
+            StationPose(plan.Site, plan.LocalPosition, plan.LocalYaw, out var position, out var rotation);
+            return new BerthPlan
+            {
+                Site = plan.Site, Boat = plan.Boat, Candidate = plan.Candidate, Restored = plan.Restored,
+                Front = plan.Front, Back = plan.Back, FrontId = plan.FrontId, BackId = plan.BackId,
+                Position = new Vector3(position.x, SpawnHeight.For(plan.Boat), position.z), Rotation = rotation,
+                LocalPosition = plan.LocalPosition, LocalYaw = plan.LocalYaw
+            };
         }
 
         // Debug note: staying boats whose hulls a restored placement overlaps.

@@ -101,6 +101,10 @@ namespace ShipShuffle
         // Terrain height at a world X/Z relative to sea level, or null where no
         // terrain covers the point; null delegate when the island has no terrain.
         internal Func<Vec2, float?> Ground;
+        // Optional final acceptance supplied by the live Unity edge. The pure
+        // geometry search invokes it only after root pose, lines, terrain and
+        // ordinary clearances have accepted a candidate.
+        internal Func<Candidate, string> SolidProblem;
 
         internal string Name(int chainPosition) =>
             Names != null && chainPosition >= 0 && chainPosition < Names.Length && Names[chainPosition] != null
@@ -118,7 +122,9 @@ namespace ShipShuffle
         // Below the 2 m gap to another hull or a recovery reserve.
         HullGap,
         // Terrain under the hull within one draft of sea level.
-        ShallowGround
+        ShallowGround,
+        // A solid collider from the loaded additive destination scene.
+        LiveSolid
     }
 
     internal sealed class Candidate
@@ -431,8 +437,9 @@ namespace ShipShuffle
                     DockSegments(points, input.OtherPiers));
             }
             if (!CheckLines(candidate, hull, points[candidate.FrontPosition], points[candidate.BackPosition])) return candidate;
-            candidate.Accepted = true;
-            candidate.Reason = "accepted";
+            if (!Accept(candidate, input))
+                return TieOff(candidate, input, hull, normal, points[candidate.FrontPosition], points[candidate.BackPosition],
+                    DockSegments(points, input.OtherPiers));
             return candidate;
         }
 
@@ -447,12 +454,13 @@ namespace ShipShuffle
         // The recovery marker, a recovery reserve, another hull or shallow ground
         // block a berth that a few metres more water would clear.
         internal static bool TieOffEligible(Rejection rejection) =>
-            (rejection == Rejection.RecoveryMarker || rejection == Rejection.HullGap || rejection == Rejection.ShallowGround);
+            rejection == Rejection.RecoveryMarker || rejection == Rejection.HullGap || rejection == Rejection.ShallowGround ||
+            rejection == Rejection.LiveSolid;
 
         // Retry a rejected pair further out along its normal, 1 m at a time up
         // to 10 m, tied to the same cleats on lines up to 18 m.
         internal static Candidate TieOff(Candidate candidate, BerthInput input, HullSpec hull, Vec2 normal, Vec2 frontCleat,
-            Vec2 backCleat, IList<Vec2[]> dockSegments)
+            Vec2 backCleat, IList<Vec2[]> dockSegments, bool waiveRecovery = false)
         {
             if (!TieOffEligible(candidate.Rejection)) return candidate;
             var first = candidate.Reason;
@@ -473,7 +481,7 @@ namespace ShipShuffle
                     foreach (var segment in dockSegments) dock = Math.Min(dock, ChainClearance(candidate.Hull, segment));
                 candidate.DockClearance = dock;
                 if (!(dock >= DockClearance)) return Reject(candidate, cause, first + " Tied off the dock: hull meets the dock at +" + F(extra) + " m.");
-                if (!CheckClearances(candidate, input, hull, false))
+                if (!CheckClearances(candidate, input, hull, waiveRecovery))
                 {
                     if (TieOffEligible(candidate.Rejection)) continue;
                     return candidate;
@@ -485,9 +493,7 @@ namespace ShipShuffle
                 if (terrain != null) continue;
                 if (!CheckLines(candidate, hull, frontCleat, backCleat, TiedOffMaxLine)) return candidate;
                 candidate.TiedOff = extra;
-                candidate.Accepted = true;
-                candidate.Reason = "accepted, tied off the dock (+" + F(extra) + " m)";
-                return candidate;
+                if (Accept(candidate, input, "accepted, tied off the dock (+" + F(extra) + " m)")) return candidate;
             }
             return Reject(candidate, cause, first + " Tied off the dock: still blocked at +" + F(MaxTieOff) + " m" +
                 (terrain != null ? " (" + terrain + ")" : "") + ".");
@@ -721,6 +727,19 @@ namespace ShipShuffle
 
         internal static Candidate Reject(Candidate candidate, string reason) => Reject(candidate, Rejection.Other, reason);
 
+        internal static bool Accept(Candidate candidate, BerthInput input, string reason = "accepted")
+        {
+            var solid = input?.SolidProblem?.Invoke(candidate);
+            if (solid != null)
+            {
+                Reject(candidate, Rejection.LiveSolid, "Live scenery blocks this placement: " + solid);
+                return false;
+            }
+            candidate.Accepted = true;
+            candidate.Reason = reason;
+            return true;
+        }
+
         internal static Candidate Reject(Candidate candidate, Rejection rejection, string reason)
         {
             candidate.Accepted = false;
@@ -772,76 +791,5 @@ namespace ShipShuffle
         }
 
         private static double Clamp(double value) => Math.Max(0, Math.Min(1, value));
-    }
-
-    // Mooring-line slack for placed sale boats (pure rules; MooringSlack
-    // applies them). Vanilla PickupableBoatMooringRope.Update sets a moored
-    // rope's length to the current distance whenever the hull turns from
-    // kinematic to dynamic, so placed lines have no slack. At the first such
-    // reset after placement each planned rope is set once to the longer of
-    // its planned line and its current distance, + 3 m (4 m for Large
-    // hulls), capped at sqrt(maxLength + 25) (vanilla ChangeRopeLength's
-    // release limit; maxLength is a squared length, 900). Later resets are
-    // vanilla's, as for any sale boat.
-    internal static class RopeSlack
-    {
-        internal const float Normal = 3f;
-        internal const float Large = 4f;
-        internal const float ReleaseAllowanceSquared = 25f;
-
-        internal static float For(bool large) => large ? Large : Normal;
-
-        // Squared rope length to set, or NaN when the input is unusable or the
-        // line is already at or beyond the cap. Never shorter than the distance.
-        internal static float LengthSquared(float distanceSquared, float maxLengthSquared, float slack)
-        {
-            if (!DockGeometry.Finite(distanceSquared) || distanceSquared < 0f || !DockGeometry.Finite(maxLengthSquared) ||
-                maxLengthSquared <= 0f || !DockGeometry.Finite(slack) || slack < 0f) return float.NaN;
-            var cap = maxLengthSquared + ReleaseAllowanceSquared;
-            if (distanceSquared >= cap) return float.NaN;
-            var length = Math.Min(Math.Sqrt(distanceSquared) + slack, Math.Sqrt(cap));
-            return (float)(length * length);
-        }
-
-        // The line's squared length: the longer of the planned line (metres,
-        // from the berth plan; horizontal, so a high cleat makes the real rope
-        // longer) and the current distance, + slack. NaN when nothing usable
-        // can be set.
-        internal static float FixedLengthSquared(float plannedLine, float distanceSquared, float maxLengthSquared, float slack)
-        {
-            var planned = DockGeometry.Finite(plannedLine) && plannedLine > 0f ? plannedLine * plannedLine : float.NaN;
-            var basis = float.IsNaN(planned) ? distanceSquared
-                : DockGeometry.Finite(distanceSquared) && distanceSquared > planned ? distanceSquared : planned;
-            return LengthSquared(basis, maxLengthSquared, slack);
-        }
-    }
-
-    // One planned rope, set once. It waits until the hull is dynamic while
-    // playing and not loading and the rope's own Update has handled the
-    // kinematic-to-dynamic edge; then it yields its length (nothing when the
-    // rope is no longer moored to its planned spring) and is done.
-    internal sealed class SlackLine
-    {
-        // Planned line length from the berth plan (metres); NaN when unknown.
-        internal float PlannedLine = float.NaN;
-        internal bool Done;
-        // Done without a length: no longer moored to its planned spring.
-        internal bool Skipped;
-
-        // nativeReset: the rope's wasKinematic flag is clear. Returns the
-        // squared length to set, or NaN.
-        internal float Step(bool dynamic, bool playing, bool loading, bool stillMoored, bool nativeReset,
-            float distanceSquared, float maxLengthSquared, float slack)
-        {
-            if (Done || !dynamic || !playing || loading) return float.NaN;
-            if (!stillMoored)
-            {
-                Done = Skipped = true;
-                return float.NaN;
-            }
-            if (!nativeReset) return float.NaN;
-            Done = true;
-            return RopeSlack.FixedLengthSquared(PlannedLine, distanceSquared, maxLengthSquared, slack);
-        }
     }
 }

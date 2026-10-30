@@ -17,7 +17,7 @@ namespace ShipShuffle
     {
         public const string Id = "com.skeptic043.sailwind.shipshuffle";
         // Bump on every user-facing build.
-        public const string Version = "1.0.0";
+        public const string Version = "1.0.1";
         internal const string ScrambledSeasId = "com.nandbrew.scrambledseas";
         internal const string NewBeginningsId = "com.skeptic043.sailwind.newbeginnings";
 
@@ -93,7 +93,6 @@ namespace ShipShuffle
             {
                 Lifecycle.Cancel();
                 StopAllCoroutines();
-                BoatRelocator.RestoreAllGuards();
             }
             catch (Exception exception) { Logger.LogError("Ship Shuffle shutdown cleanup failed: " + exception); }
             finally

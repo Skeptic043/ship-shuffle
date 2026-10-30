@@ -213,31 +213,62 @@ namespace ShipShuffle
         {
             var plan = entry.Plan;
             var boat = plan.Boat;
+            entry.Moved = true;
+            MoveBoat(boat, plan.Position, plan.Rotation, entry.AnchorBody, entry.OldAnchorPosition + (plan.Position - entry.OldPosition));
+            // Frozen before tying, as vanilla's sale boats are while distant.
+            PlacementCoordinator.Attach(plan);
+            CompletePlacement(plan, context, entry.OldPosition);
+            entry.Placed = true;
+        }
+
+        // Puts the boat back on its berth once the destination scenery is
+        // live and ties it again, so it goes live exactly where vanilla's
+        // boats do: at its spot, on lines as long as the distance to the cleats.
+        internal static void FinalizePlacement(BerthPlan oldPlan, BerthPlan finalPlan, string context)
+        {
+            if (oldPlan?.Boat == null || finalPlan?.Boat != oldPlan.Boat)
+                throw new InvalidOperationException("Placement finalization changed boat ownership.");
+            var boat = finalPlan.Boat;
+            StationKeeper.Remove(boat.Boat.gameObject);
+            MooringRelease.ReleaseAll(boat.Ropes.ropes, boat.Body);
+            var anchor = boat.Ropes.anchor;
+            var anchorBody = anchor != null ? anchor.GetComponent<Rigidbody>() : null;
+            var start = boat.Body.position;
+            MoveBoat(boat, finalPlan.Position, finalPlan.Rotation, anchorBody,
+                anchorBody != null ? anchorBody.position + (finalPlan.Position - start) : Vector3.zero);
+            CompletePlacement(finalPlan, context, start);
+        }
+
+        private static void MoveBoat(BoatEntry boat, Vector3 position, Quaternion rotation, Rigidbody anchorBody, Vector3 anchorPosition)
+        {
             var transform = boat.Saveable.transform;
             var body = boat.Body;
-            entry.Moved = true;
-            transform.SetPositionAndRotation(plan.Position, plan.Rotation);
-            body.position = plan.Position;
-            body.rotation = plan.Rotation;
+            transform.SetPositionAndRotation(position, rotation);
+            body.position = position;
+            body.rotation = rotation;
             body.velocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;
-            if (entry.AnchorBody != null)
+            if (anchorBody != null)
             {
-                entry.AnchorBody.position = entry.OldAnchorPosition + (plan.Position - entry.OldPosition);
-                entry.AnchorBody.velocity = Vector3.zero;
-                entry.AnchorBody.angularVelocity = Vector3.zero;
+                anchorBody.position = anchorPosition;
+                anchorBody.velocity = Vector3.zero;
+                anchorBody.angularVelocity = Vector3.zero;
             }
             if (!HullFootprint.Finite(transform.position) || !HullFootprint.Finite(body.position) ||
-                entry.AnchorBody != null && !HullFootprint.Finite(entry.AnchorBody.position))
+                anchorBody != null && !HullFootprint.Finite(anchorBody.position))
                 throw new InvalidOperationException("Boat or anchor gained a non-finite position during placement.");
             Physics.SyncTransforms();
+        }
+
+        private static void CompletePlacement(BerthPlan plan, string context, Vector3 oldPosition)
+        {
+            var boat = plan.Boat;
+            var body = boat.Body;
             if (plan.Held)
             {
-                MooringSlack.Remove(boat.Boat.gameObject);
                 StationKeeper.Attach(boat, plan.Site.Island, plan.LocalPosition, plan.LocalYaw);
-                Plugin.Instance?.DebugLog(context + ": moving " + boat.Label + " from " + entry.OldPosition.ToString("F2") +
+                Plugin.Instance?.DebugLog(context + ": moving " + boat.Label + " from " + oldPosition.ToString("F2") +
                     " to station-kept spot " + plan.Position.ToString("F2") + " yaw " + plan.Rotation.eulerAngles.y.ToString("F1") + ".");
-                entry.Placed = true;
                 return;
             }
 
@@ -245,24 +276,29 @@ namespace ShipShuffle
             var frontRope = RopeAt(boat, plan.Candidate.FrontRope);
             var backRope = RopeAt(boat, plan.Candidate.BackRope);
             if (frontRope == backRope) throw new InvalidOperationException("Front and back mooring ropes are the same rope.");
-            Plugin.Instance?.DebugLog(context + ": moving " + boat.Label + " from " + entry.OldPosition.ToString("F2") +
+            Plugin.Instance?.DebugLog(context + ": moving " + boat.Label + " from " + oldPosition.ToString("F2") +
                 " to " + plan.Position.ToString("F2") + " yaw " + plan.Rotation.eulerAngles.y.ToString("F1") + "; tying " +
                 frontRope.name + " to " + plan.FrontId + " (" + DockGeometry.F(plan.Candidate.FrontLine) + " m) and " +
                 backRope.name + " to " + plan.BackId + " (" + DockGeometry.F(plan.Candidate.BackLine) + " m).");
             MoorAt(frontRope, plan.Front, body);
             MoorAt(backRope, plan.Back, body);
             // Moored boats are only placed; the game's physics then holds them
-            // on lines with some slack (no keeper).
-            MooringSlack.Attach(boat, frontRope, plan.Front.spring, plan.Candidate.FrontLine, backRope, plan.Back.spring, plan.Candidate.BackLine);
-            entry.Placed = true;
+            // on native lines (no keeper). A rope that measures its length from
+            // somewhere other than its own attachment would give the hull a
+            // line hundreds of metres long when it goes live; hold it instead.
+            var ropeProblem = MooringRelease.GeometryProblem(frontRope, body) ?? MooringRelease.GeometryProblem(backRope, body);
+            if (ropeProblem == null) return;
+            MooringRelease.ReleaseAll(boat.Ropes.ropes, body);
+            StationKeeper.Attach(boat, plan.Site.Island, plan.LocalPosition, plan.LocalYaw);
+            Plugin.Instance?.Warn(context + ": " + boat.Label + " is held at its spot instead of moored (" + ropeProblem + ").");
         }
 
-        // Rollback, first step: off every line, with no hold or slack left.
+        // Rollback, first step: off every line, with no hold left.
         private static void Unmoor(Entry entry, string context)
         {
             var boat = entry.Plan.Boat;
+            PlacementCoordinator.Release(boat.Boat.gameObject);
             StationKeeper.Remove(boat.Boat.gameObject);
-            MooringSlack.Remove(boat.Boat.gameObject);
             foreach (var rope in entry.Ropes)
             {
                 try
@@ -426,6 +462,15 @@ namespace ShipShuffle
             ActiveGuards.Add(guard);
             try
             {
+                // The same guard covers the placement and the one-time check
+                // against live scenery. The boat is held frozen meanwhile
+                // (PlacementCoordinator), so a quiet BoatProbes alters nothing.
+                while (!plan.Finalized)
+                {
+                    var boat = plan.Boat;
+                    if (boat?.Boat == null || boat.Purchased || boat.Boat.GetComponent<PlacementCoordinator>() == null) yield break;
+                    yield return null;
+                }
                 yield return new WaitForFixedUpdate();
                 yield return new WaitForFixedUpdate();
                 yield return new WaitForEndOfFrame();
@@ -437,21 +482,21 @@ namespace ShipShuffle
             }
             try
             {
+                // Finalization may have chosen another berth: report the live state.
                 var boat = plan.Boat;
-                if (boat.Body == null) yield break;
-                if (plan.Held)
+                if (boat.Boat == null || boat.Body == null) yield break;
+                var where = boat.Saveable.transform.position.ToString("F2") + " yaw " + boat.Saveable.transform.eulerAngles.y.ToString("F1");
+                if (boat.Boat.GetComponent<StationKeeper>() != null)
                 {
-                    Plugin.Instance?.DebugLog(context + ": " + boat.Label + " settled at station-kept spot " +
-                        boat.Saveable.transform.position.ToString("F2") + "; kinematic " + boat.Body.isKinematic + ".");
+                    Plugin.Instance?.DebugLog(context + ": " + boat.Label + " settled at station-kept spot " + where +
+                        "; kinematic " + boat.Body.isKinematic + ".");
                     yield break;
                 }
-                if (plan.Front == null || plan.Back == null) yield break;
-                Plugin.Instance?.DebugLog(context + ": " + boat.Label + " settled at " +
-                    boat.Saveable.transform.position.ToString("F2") + " yaw " +
-                    boat.Saveable.transform.eulerAngles.y.ToString("F1") + "; front spring " + plan.FrontId + " -> " +
-                    BodyName(plan.Front.spring.connectedBody) + ", back spring " + plan.BackId + " -> " +
-                    BodyName(plan.Back.spring.connectedBody) + "; kinematic " + boat.Body.isKinematic + ".");
-                if (plan.Front.spring.connectedBody != boat.Body || plan.Back.spring.connectedBody != boat.Body)
+                var moored = boat.Ropes.ropes.Where(rope => rope != null && rope.IsMoored()).Select(rope =>
+                    rope.name + " -> " + BodyName(MooringRelease.GetSpring(rope)?.connectedBody)).ToArray();
+                Plugin.Instance?.DebugLog(context + ": " + boat.Label + " settled at " + where + "; " +
+                    (moored.Length > 0 ? string.Join(", ", moored) : "no lines") + "; kinematic " + boat.Body.isKinematic + ".");
+                if (boat.Ropes.ropes.Count(rope => rope != null && MooringRelease.GetSpring(rope)?.connectedBody == boat.Body) < 2)
                     Plugin.Instance?.Warn(context + ": a dock spring of " + boat.Label + " disconnected after placement.");
             }
             catch (Exception exception)

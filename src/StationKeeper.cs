@@ -87,6 +87,7 @@ namespace ShipShuffle
                     Plugin.Instance?.Warn("Purchase: " + __instance.name + " is not marked purchased; its hold stays" + note + ".");
                 else
                     Plugin.Instance?.DebugLog("Purchase: no hold present on " + __instance.name + note + ".");
+                if (__instance.isPurchased()) PlacementCoordinator.Release(__instance.gameObject);
             }
             catch (Exception exception)
             {
