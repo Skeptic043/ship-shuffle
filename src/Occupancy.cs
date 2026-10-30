@@ -23,9 +23,12 @@ namespace ShipShuffle
             Moving = new HashSet<Rigidbody>(moving);
         }
 
-        internal static Occupancy Build(IEnumerable<Rigidbody> moving)
+        // relocated: boats already on their new berths. They stay obstacles
+        // and keep the springs they hold, but their authored claims are void.
+        internal static Occupancy Build(IEnumerable<Rigidbody> moving, IEnumerable<Rigidbody> relocated = null)
         {
             var result = new Occupancy(moving);
+            var away = new HashSet<Rigidbody>(relocated ?? Enumerable.Empty<Rigidbody>());
             foreach (var pair in HullFootprint.AllBoats())
                 if (!result.Moving.Contains(pair.Key)) result.obstacles.Add(pair);
             foreach (var ropes in Resources.FindObjectsOfTypeAll<BoatMooringRopes>())
@@ -33,7 +36,7 @@ namespace ShipShuffle
                 if (ropes == null || !ropes.gameObject.scene.IsValid() || !ropes.gameObject.scene.isLoaded ||
                     !ropes.gameObject.activeInHierarchy) continue;
                 var body = ropes.GetComponent<Rigidbody>();
-                if (body != null && result.Moving.Contains(body)) continue;
+                if (body != null && (result.Moving.Contains(body) || away.Contains(body))) continue;
                 foreach (var mooring in new[] { ropes.mooringFront, ropes.mooringBack })
                 {
                     if (mooring == null) continue;

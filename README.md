@@ -6,21 +6,21 @@ Randomize boat spawns for a different experience in a fresh save.
 
 ### Mod managers
 
-Install Ship Shuffle through [r2modman](https://github.com/ebkr/r2modmanPlus) or [Thunderstore Mod Manager](https://get.thunderstore.io/), then launch Sailwind through your manager. BepInEx is installed automatically. [BepInEx Configuration Manager](https://github.com/BepInEx/BepInEx.ConfigurationManager) is optional and gives you an in-game settings menu.
+Install Ship Shuffle through [Sailwind Mod Synchronizer](https://github.com/foxyv/SailwindModSynchronizer/releases/latest), r2modman or Thunderstore Mod Manager, then launch Sailwind through your manager. Dependencies are installed automatically.
 
 ### Manual installation
 
-1. Install [BepInEx 5](https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5) in your Sailwind game folder, following its installation instructions.
-2. Download and extract the [Ship Shuffle ZIP](https://github.com/Skeptic043/ship-shuffle/releases). Copy its `BepInEx/plugins/ShipShuffle` folder into `BepInEx/plugins` in your Sailwind folder or mod profile.
-3. Launch Sailwind.
+1. Install [BepInEx 5](https://github.com/BepInEx/BepInEx/releases) in your Sailwind game folder, following its installation instructions.
+2. Download and extract the [Ship Shuffle ZIP](https://github.com/Skeptic043/ship-shuffle/releases/latest). Copy its `BepInEx/plugins/ShipShuffle` folder into `BepInEx/plugins` in your Sailwind folder.
+3. Launch Sailwind normally.
 
 ## How it works
 
-Each new game draws from your enabled boats and selected destinations, configurable in the config file. Selected destinations take priority, with boats being spread across your selection first. Any leftover boats once your selected ports are filled are placed at non-selected ports by default. A boat rolling its default spawn is also a possibility. Boats are moored at a free, non-recovery berth with a little extra line. If there's no room on the dock, the boat waits offshore and is held in place until you buy it.
+Each new game draws from your enabled boats and selected destinations, configurable in the config file. Selected destinations take priority, with boats being spread across your selection first. Any leftover boats once your selected ports are filled are placed at non-selected ports by default. A boat rolling its default spawn is also a possibility. Boats are moored at a free, non-recovery berth. If there's no room on the dock, the boat waits offshore and is held in place until you buy it.
 
 ## Configuration
 
-Open Ship Shuffle in [BepInEx Configuration Manager](https://github.com/BepInEx/BepInEx.ConfigurationManager). The main controls cover boat groups, the seed and shared shipyards. Expand Advanced to choose individual boats and destinations, allow mod ports or enable diagnostics.
+Open Ship Shuffle in the BepInEx 5 version of [BepInEx Configuration Manager](https://github.com/BepInEx/BepInEx.ConfigurationManager). The main controls cover boat groups, the seed and shared shipyards. Expand Advanced to choose individual boats and destinations, allow mod ports or enable diagnostics.
 
 Seed, boat filters and destination choices apply to your next new game. `Enabled` also controls whether an existing layout is restored when you load its save.
 
@@ -62,7 +62,7 @@ No known incompatibilities.
 
 Boats added by mods are detected automatically, but a boat that can't be moved stays at its original location. Mod boats are grouped by measured hull dimensions. Small hulls are at most 13 m long and 4.4 m across, Medium hulls are at most 26 m long and 6.8 m across, and larger hulls belong to the Large group.
 
-- Large boats aren't sent to Sage Hills, Mirage Mountain, Aestra Abbey or Old Ankh Town. [HMS Leopard](https://github.com/winterspices/HMSLeopard) isn't sent to Neverdin.
+- Large boats aren't sent to Sage Hills, Mirage Mountain, Aestra Abbey or Old Ankh Town.
 - An empty HMS Leopard for sale receives one furled medium lateen on its mainmast.
 
 ## AI Use
@@ -71,6 +71,4 @@ AI was used to write all of the code in this project. The original concept, desi
 
 ## Issues and links
 
-[Report an issue](https://github.com/Skeptic043/ship-shuffle/issues)
-
-[Source code](https://github.com/Skeptic043/ship-shuffle) · [Release notes](https://github.com/Skeptic043/ship-shuffle/blob/HEAD/CHANGELOG.md) · [Build instructions](https://github.com/Skeptic043/ship-shuffle/blob/HEAD/BUILD.md) · [MIT License](https://github.com/Skeptic043/ship-shuffle/blob/HEAD/LICENSE) · [Support on Ko-fi](https://ko-fi.com/skeptic043) · skeptic043
+[Report an issue](https://github.com/Skeptic043/ship-shuffle/issues) · [Source code](https://github.com/Skeptic043/ship-shuffle) · [Release notes](https://github.com/Skeptic043/ship-shuffle/blob/main/CHANGELOG.md) · [Build instructions](https://github.com/Skeptic043/ship-shuffle/blob/main/BUILD.md) · [MIT License](https://github.com/Skeptic043/ship-shuffle/blob/main/LICENSE) · [Support on Ko-fi](https://ko-fi.com/skeptic043) · skeptic043

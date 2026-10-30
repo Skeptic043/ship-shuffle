@@ -2,6 +2,7 @@ param(
     [string]$GameManagedDir = 'C:\Steam Games\steamapps\common\Sailwind\Sailwind_Data\Managed',
     [string]$ReferenceDir = '',
     [string]$OutputDirectory = 'artifacts',
+    [switch]$ValidateOnly,
     [switch]$SkipBuild,
     [switch]$Force
 )
@@ -33,12 +34,19 @@ if ($manifest.dependencies -isnot [System.Array] -or $manifest.dependencies.Coun
 }
 
 $pluginSource = Read-Utf8Text (Join-Path $projectRoot 'src\Plugin.cs')
+$idMatches = [regex]::Matches($pluginSource, 'public\s+const\s+string\s+Id\s*=\s*"([^"]+)"\s*;')
+if ($idMatches.Count -ne 1 -or $idMatches[0].Groups[1].Value -cne 'com.skeptic043.sailwind.shipshuffle') {
+    throw 'Plugin.Id must contain the canonical Ship Shuffle plugin GUID.'
+}
 $versionMatches = [regex]::Matches($pluginSource, 'public\s+const\s+string\s+Version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*;')
 if ($versionMatches.Count -ne 1 -or $versionMatches[0].Groups[1].Value -cne $manifest.version_number) {
     throw 'Manifest version does not match the canonical Plugin.Version.'
 }
 $version = $manifest.version_number
-$null = Read-Utf8Text (Join-Path $projectRoot 'README.md')
+$readme = Read-Utf8Text (Join-Path $projectRoot 'README.md')
+if ($readme -notmatch '\[Ship Shuffle ZIP\]\(https://github\.com/Skeptic043/ship-shuffle/releases/latest\)') {
+    throw 'README manual installation must link to the latest Ship Shuffle release.'
+}
 $changelog = Read-Utf8Text (Join-Path $projectRoot 'CHANGELOG.md')
 $heading = [regex]::Match($changelog, '(?m)^##[ \t]+(?:\[)?(?<version>[0-9]+\.[0-9]+\.[0-9]+)(?:\])?(?:[ \t]|\r?$)')
 if (-not $heading.Success -or $heading.Groups['version'].Value -cne $version) {
@@ -60,6 +68,68 @@ for ($i = 0; $i -lt $signature.Count; ++$i) {
 $width = [uint32]$icon[16] * 16777216 + [uint32]$icon[17] * 65536 + [uint32]$icon[18] * 256 + $icon[19]
 $height = [uint32]$icon[20] * 16777216 + [uint32]$icon[21] * 65536 + [uint32]$icon[22] * 256 + $icon[23]
 if ($width -ne 256 -or $height -ne 256) { throw 'icon.png must be 256 x 256 pixels.' }
+
+$project = [xml](Read-Utf8Text (Join-Path $projectRoot 'ShipShuffle.csproj'))
+$properties = @($project.Project.PropertyGroup)
+if (($properties.TargetFramework | Where-Object { $_ } | Select-Object -First 1) -cne 'net471') {
+    throw 'ShipShuffle.csproj must target net471.'
+}
+if (($properties.AssemblyName | Where-Object { $_ } | Select-Object -First 1) -cne 'ShipShuffle') {
+    throw 'ShipShuffle.csproj must build the ShipShuffle assembly.'
+}
+
+$tracked = @(& git -C $projectRoot ls-files)
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the tracked-file inventory.' }
+$trackedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+foreach ($path in $tracked) { $null = $trackedSet.Add($path.Replace('\', '/')) }
+
+$requiredTracked = @(
+    '.github/workflows/validate.yml',
+    'BUILD.md',
+    'Build.ps1',
+    'CHANGELOG.md',
+    'LICENSE',
+    'Package.ps1',
+    'README.md',
+    'ShipShuffle.csproj',
+    'TESTING.md',
+    'icon.png',
+    'manifest.json'
+)
+foreach ($path in $requiredTracked) {
+    if (-not $trackedSet.Contains($path)) { throw "Required public file is not tracked: $path" }
+}
+
+$forbiddenTracked = @($tracked | Where-Object {
+    $path = $_.Replace('\', '/')
+    $path -match '^(?:\.local|\.agents|\.codex|artifacts|bin|obj)/' -or
+    $path -match '(^|/)AGENTS\.md$' -or
+    $path -match '(^|/)[^/]*(?:PLAN|BACKLOG|HANDOFF|SESSION)[^/]*\.md$' -or
+    $path -match '\.(?:dll|exe|pdb)$'
+})
+if ($forbiddenTracked.Count -gt 0) {
+    throw 'Internal, generated or binary files are tracked: ' + ($forbiddenTracked -join ', ')
+}
+
+foreach ($source in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' -File) {
+    $relative = 'src/' + $source.Name
+    if (-not $trackedSet.Contains($relative)) { throw "Production source is not tracked: $relative" }
+}
+
+foreach ($script in $tracked | Where-Object { $_ -match '\.ps1$' }) {
+    $tokens = $null
+    $parseErrors = $null
+    $null = [System.Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $projectRoot $script), [ref]$tokens, [ref]$parseErrors)
+    if ($parseErrors.Count -gt 0) {
+        throw "PowerShell syntax check failed for $script`: " + (($parseErrors | ForEach-Object Message) -join '; ')
+    }
+}
+
+if ($ValidateOnly) {
+    Write-Output "Validated Ship Shuffle $version repository and release metadata."
+    return
+}
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { throw 'OutputDirectory must not be empty.' }
 if (-not [System.IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory = Join-Path $projectRoot $OutputDirectory }
