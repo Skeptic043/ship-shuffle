@@ -32,10 +32,6 @@ powershell -NoProfile -File .\Package.ps1 -ValidateOnly
 
 This checks the public file inventory, repository hygiene, PowerShell syntax, plugin identity, version metadata, README release link, changelog heading and package icon. It does not build the plugin because the required Sailwind assemblies are local build references and are not distributed through the repository.
 
-## Gameplay checks
-
-Follow [Testing Ship Shuffle](TESTING.md) for boat discovery, placement, purchase and save/load checks.
-
 ## Package
 
 Run from the project directory:

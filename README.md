@@ -69,6 +69,6 @@ Boats added by mods are detected automatically, but a boat that can't be moved s
 
 AI was used to write all of the code in this project. The original concept, design direction, testing, debugging, and release decisions are my own. If you prefer not to use mods developed with AI assistance, I understand and respect that choice.
 
-## Issues and links
+## Links
 
-[Report an issue](https://github.com/Skeptic043/ship-shuffle/issues) · [Source code](https://github.com/Skeptic043/ship-shuffle) · [Release notes](https://github.com/Skeptic043/ship-shuffle/blob/main/CHANGELOG.md) · [Build instructions](https://github.com/Skeptic043/ship-shuffle/blob/main/BUILD.md) · [MIT License](https://github.com/Skeptic043/ship-shuffle/blob/main/LICENSE) · [Support on Ko-fi](https://ko-fi.com/skeptic043) · skeptic043
+[Report an issue](https://github.com/Skeptic043/ship-shuffle/issues) · [Source code](https://github.com/Skeptic043/ship-shuffle) · [Release notes](https://github.com/Skeptic043/ship-shuffle/blob/main/CHANGELOG.md) · [Build instructions](https://github.com/Skeptic043/ship-shuffle/blob/main/BUILDING.md) · [License](https://github.com/Skeptic043/ship-shuffle/blob/main/LICENSE) · [Support on Ko-fi](https://ko-fi.com/skeptic043) · skeptic043

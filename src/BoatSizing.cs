@@ -9,6 +9,8 @@ namespace ShipShuffle
         // World metres. Small covers the retained Dhow/Cog/Kakam/Gallus
         // fixtures (up to 12 x 4.28 m), Medium the Sanbuq/Brig/Junk
         // fixtures (up to 25.86 x 6.68 m). Both dimensions must fit.
+        // New Beginnings copies these thresholds in its src/BoatSizing.cs so
+        // both mods sort an unlisted boat alike; change both together.
         internal static BoatSize FromHull(float length, float radius)
         {
             var diameter = 2f * radius;

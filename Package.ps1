@@ -85,14 +85,13 @@ foreach ($path in $tracked) { $null = $trackedSet.Add($path.Replace('\', '/')) }
 
 $requiredTracked = @(
     '.github/workflows/validate.yml',
-    'BUILD.md',
+    'BUILDING.md',
     'Build.ps1',
     'CHANGELOG.md',
     'LICENSE',
     'Package.ps1',
     'README.md',
     'ShipShuffle.csproj',
-    'TESTING.md',
     'icon.png',
     'manifest.json'
 )

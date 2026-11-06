@@ -17,3 +17,6 @@
 *.log
 .DS_Store
 Thumbs.db
+
+# Private manual test checklist
+TESTING.md
