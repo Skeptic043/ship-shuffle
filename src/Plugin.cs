@@ -17,11 +17,12 @@ namespace ShipShuffle
     {
         public const string Id = "com.skeptic043.sailwind.shipshuffle";
         // Bump on every user-facing build.
-        public const string Version = "1.0.1";
+        public const string Version = "1.0.2";
         internal const string ScrambledSeasId = "com.nandbrew.scrambledseas";
         internal const string NewBeginningsId = "com.skeptic043.sailwind.newbeginnings";
 
         private Harmony harmony;
+        internal Harmony Harmony => harmony;
         internal static Plugin Instance { get; private set; }
         internal ShuffleConfig Settings { get; private set; }
         internal bool ScrambledSeasInstalled { get; private set; }

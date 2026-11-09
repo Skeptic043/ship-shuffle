@@ -159,7 +159,7 @@ namespace ShipShuffle
                 if (entry.Move.Dropped || !entry.Placed) continue;
                 try
                 {
-                    Plugin.Instance.Run(ReleaseGuard(entry.Guard, entry.Plan, context));
+                    ReleaseGuardWhenDone(entry.Guard, entry.Plan, context);
                 }
                 catch (Exception exception)
                 {
@@ -457,20 +457,36 @@ namespace ShipShuffle
             return reason == null;
         }
 
-        private static IEnumerator ReleaseGuard(ProbeVelocityGuard guard, BerthPlan plan, string context)
+        // The same guard covers the placement and the one-time check against
+        // live scenery. The boat is held frozen meanwhile (PlacementCoordinator),
+        // so a quiet BoatProbes alters nothing. The coordinator says when it
+        // lets go, so nothing polls for the boats waiting at unvisited ports.
+        private static void ReleaseGuardWhenDone(ProbeVelocityGuard guard, BerthPlan plan, string context)
         {
             ActiveGuards.Add(guard);
+            var boat = plan.Boat;
+            if (plan.Finalized || boat?.Boat == null || boat.Purchased || boat.Boat.GetComponent<PlacementCoordinator>() == null)
+            {
+                Plugin.Instance.Run(ReleaseGuard(guard, plan, context));
+                return;
+            }
+            plan.Done += () =>
+            {
+                if (Plugin.Instance != null) Plugin.Instance.Run(ReleaseGuard(guard, plan, context));
+                else
+                {
+                    guard.Restore();
+                    ActiveGuards.Remove(guard);
+                }
+            };
+        }
+
+        private static IEnumerator ReleaseGuard(ProbeVelocityGuard guard, BerthPlan plan, string context)
+        {
             try
             {
-                // The same guard covers the placement and the one-time check
-                // against live scenery. The boat is held frozen meanwhile
-                // (PlacementCoordinator), so a quiet BoatProbes alters nothing.
-                while (!plan.Finalized)
-                {
-                    var boat = plan.Boat;
-                    if (boat?.Boat == null || boat.Purchased || boat.Boat.GetComponent<PlacementCoordinator>() == null) yield break;
-                    yield return null;
-                }
+                // An abandoned placement restores the guard at once.
+                if (!plan.Finalized) yield break;
                 yield return new WaitForFixedUpdate();
                 yield return new WaitForFixedUpdate();
                 yield return new WaitForEndOfFrame();

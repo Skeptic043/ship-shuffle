@@ -25,7 +25,10 @@ namespace ShipShuffle
         private static readonly FieldInfo VisualRefreshing = AccessTools.Field(typeof(ReefEffectAnimUniversal), "refreshing");
         private static readonly FieldInfo WinchClicked = AccessTools.Field(typeof(GoPointerButton), "isClicked");
         private static readonly FieldInfo WinchStickyClickedBy = AccessTools.Field(typeof(GoPointerButton), "stickyClickedBy");
+        internal static readonly MethodInfo WinchUpdate = AccessTools.Method(typeof(GPButtonRopeWinch), "Update");
+        internal static readonly MethodInfo WinchInputPrefix = AccessTools.Method(typeof(LeopardSaleRig), nameof(ReleaseOnWinchInput));
         private static GPButtonRopeWinch pendingWinch;
+        private static bool winchWatched;
         private static ShipyardSailColChecker pendingChecker;
         private static BoatEntry pendingBoat;
         private static readonly HashSet<SaveableObject> attempted = new HashSet<SaveableObject>();
@@ -41,9 +44,51 @@ namespace ShipShuffle
         private static void CancelPending()
         {
             ++generation;
-            pendingWinch = null;
+            ClearWinch();
             pendingBoat = null;
             ClearClothRestart();
+        }
+
+        // Every winch runs Update each frame, but only the sale Leopard's winch
+        // matters, and only for the few seconds its furl is pending. Hook it for that window.
+        private static void WatchWinch(GPButtonRopeWinch winch)
+        {
+            pendingWinch = winch;
+            if (winchWatched || WinchUpdate == null || WinchInputPrefix == null || Plugin.Instance?.Harmony == null) return;
+            try
+            {
+                Plugin.Instance.Harmony.Patch(WinchUpdate, prefix: new HarmonyMethod(WinchInputPrefix));
+                winchWatched = true;
+            }
+            catch (Exception exception)
+            {
+                // FinalizeFurl still checks the winch every frame.
+                Plugin.Instance.Warn("Leopard sale winch input hook was not installed: " + exception.Message);
+            }
+        }
+
+        private static void ClearWinch()
+        {
+            pendingWinch = null;
+            if (winchWatched && Plugin.Instance != null) Plugin.Instance.Run(UnwatchWinchNextFrame());
+        }
+
+        private static IEnumerator UnwatchWinchNextFrame()
+        {
+            // Release can happen inside the hooked Update; remove the hook outside it.
+            yield return null;
+            if (!winchWatched || pendingWinch != null) yield break;
+            var harmony = Plugin.Instance?.Harmony;
+            if (harmony == null) yield break;
+            try
+            {
+                harmony.Unpatch(WinchUpdate, WinchInputPrefix);
+                winchWatched = false;
+            }
+            catch (Exception exception)
+            {
+                Plugin.Instance?.Warn("Leopard sale winch input hook could not be removed: " + exception.Message);
+            }
         }
 
         private static void ClearClothRestart()
@@ -106,21 +151,17 @@ namespace ShipShuffle
             }
         }
 
-        [HarmonyPatch(typeof(GPButtonRopeWinch), "Update")]
-        private static class ReleaseOnWinchInput
+        private static void ReleaseOnWinchInput(GPButtonRopeWinch __instance)
         {
-            private static void Prefix(GPButtonRopeWinch __instance)
+            if (!ReferenceEquals(__instance, pendingWinch) || pendingWinch == null) return;
+            try
             {
-                if (!ReferenceEquals(__instance, pendingWinch) || pendingWinch == null) return;
-                try
-                {
-                    if (WinchInUse(__instance)) ReleaseForWinchInput(__instance);
-                }
-                catch (Exception exception)
-                {
-                    CancelPending();
-                    Plugin.Instance?.Warn("Leopard sale furl input check released pending initialization: " + exception.Message);
-                }
+                if (WinchInUse(__instance)) ReleaseForWinchInput(__instance);
+            }
+            catch (Exception exception)
+            {
+                CancelPending();
+                Plugin.Instance?.Warn("Leopard sale furl input check released pending initialization: " + exception.Message);
             }
         }
 
@@ -324,7 +365,7 @@ namespace ShipShuffle
             {
                 if (token == generation)
                 {
-                    pendingWinch = null;
+                    ClearWinch();
                     ClearClothRestart();
                 }
             }
@@ -383,7 +424,7 @@ namespace ShipShuffle
             if (reef == null || reef.sail != installed || mast.reefWinch[0].rope != reef)
                 throw new InvalidOperationException("Native medium lateen reef control was not attached to the mainmast winch.");
             FurlInstalledSail(reef);
-            pendingWinch = mast.reefWinch[0];
+            WatchWinch(mast.reefWinch[0]);
             Plugin.Instance.DebugLog($"Leopard sale sail: installed one medium lateen (prefab {SailIndex}) on mainmast 7 at {sail.installHeight:F2}m; initial reef value set, native visual initialization pending.");
             return reef;
         }

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2
+
+### Changed
+- A shuffled boat's state is no longer checked every frame prior to visiting the port it was placed at
+- Ship Shuffle no longer checks winches every frame for an entire session
+
+## Changed
+- Shuffled boats waiting for you to visit their port no longer get checked every frame
+- Stopped checking every winch on every frame for the whole session, which was only needed for a few seconds after a sale Leopard is rigged
+
 ## 1.0.1
 
 ### Changed

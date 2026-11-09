@@ -31,6 +31,12 @@ namespace ShipShuffle
             var owner = plan.Boat.Boat.gameObject;
             var coordinator = owner.GetComponent<PlacementCoordinator>();
             if (coordinator == null) coordinator = owner.AddComponent<PlacementCoordinator>();
+            // A replaced plan is released when this coordinator lets go, as before.
+            if (coordinator.plan != null && coordinator.plan != plan && coordinator.plan.Done != null)
+            {
+                plan.Done += coordinator.plan.Done;
+                coordinator.plan.Done = null;
+            }
             coordinator.plan = plan;
             coordinator.body = plan.Boat.Body;
             coordinator.sceneryReadyFrame = -1;
@@ -66,6 +72,15 @@ namespace ShipShuffle
         {
             if (body != null) Frozen.Remove(body);
             Active.Remove(this);
+            var done = plan?.Done;
+            if (plan != null) plan.Done = null;
+            if (done == null) return;
+            // A replaced plan can chain several guards. One failing must not keep the rest held.
+            foreach (Action callback in done.GetInvocationList())
+            {
+                try { callback(); }
+                catch (Exception exception) { Plugin.Instance?.Warn("A placement guard could not be released: " + exception.Message); }
+            }
         }
 
         private void Update()

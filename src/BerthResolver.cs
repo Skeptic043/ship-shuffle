@@ -69,6 +69,8 @@ namespace ShipShuffle
         // Set once PlacementCoordinator has finished with the boat (checked
         // against live scenery, or given up); the velocity guard waits for it.
         internal bool Finalized;
+        // Called once when PlacementCoordinator lets go of the boat, finalized or not.
+        internal Action Done;
 
         internal string Describe() => "tier " + Tier + (Held ? " station-kept spot " + DockGeometry.F(Candidate.Outward) +
             " m outward" : " " + FrontId + " / " + BackId + (Candidate.Side != 0 ? " side " + Candidate.Side : "") +
