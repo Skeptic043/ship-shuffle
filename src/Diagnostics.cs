@@ -64,6 +64,12 @@ namespace ShipShuffle
                     ": boatPos " + port.Recovery.boatPos.position.ToString("F2")) + ", rejected: " + reason);
                 return;
             }
+            if (port.Hold != null)
+            {
+                plugin.Report("Port " + port.Label + " on " + port.Island.name + ": no port; one fixed offshore hold at island-local (" +
+                    DockGeometry.F(port.Hold.CenterX) + ", " + DockGeometry.F(port.Hold.CenterZ) + ").");
+                return;
+            }
             if (site.NoRecovery && !site.MarkerReference)
             {
                 plugin.Report("Port " + port.Label + " on " + port.Island.name + ": no recovery berth; reserves not applied; " +

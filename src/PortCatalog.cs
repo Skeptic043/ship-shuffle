@@ -15,11 +15,14 @@ namespace ShipShuffle
         internal RecoveryPort PlacementReference;
         internal IslandHorizon Island;
         internal string DisplayName;
+        // A portless island destination (Port is null): one fixed offshore hold.
+        internal IslandHold Hold;
         // No registered usable RecoveryPort: vanilla never recovers a boat here.
         internal bool NoRecovery => Recovery == null;
-        internal int Index => Port.portIndex;
-        internal string IdentityName => Port.gameObject.name;
-        internal Identity Identity => new Identity(Index, IdentityName);
+        // Port index and object name, or island index and name for an island hold.
+        internal Identity Identity;
+        internal int Index => Identity.Index;
+        internal string IdentityName => Identity.Name;
         internal string Label => DisplayName + " [" + Index + "|" + IdentityName + "]";
     }
 
@@ -94,7 +97,7 @@ namespace ShipShuffle
                 var name = port.GetPortName();
                 candidates.Add(new PortEntry
                 {
-                    Port = port, Recovery = berths.Length == 1 ? berths[0] : null, Island = island,
+                    Port = port, Identity = new Identity(index, port.gameObject.name), Recovery = berths.Length == 1 ? berths[0] : null, Island = island,
                     PlacementReference = berths.Length == 1 ? berths[0] : reference,
                     DisplayName = string.IsNullOrEmpty(name) ? port.gameObject.name : name
                 });
@@ -113,7 +116,33 @@ namespace ShipShuffle
                 result.Ports.Add(entry);
             }
             result.Ports.Sort((left, right) => left.Index.CompareTo(right.Index));
+            AddIslandHolds(result);
             return result;
+        }
+
+        // Known islands without a Port, after the ports. An island that has
+        // gained a Port is left to it.
+        private static void AddIslandHolds(PortCatalog result)
+        {
+            var islands = Resources.FindObjectsOfTypeAll<IslandHorizon>().Where(item => item != null &&
+                item.gameObject.scene.IsValid() && item.gameObject.scene.isLoaded).ToArray();
+            foreach (var hold in KnownIdentities.IslandHolds)
+            {
+                var matches = islands.Where(item => item.islandIndex == hold.Island.Index &&
+                    string.Equals(item.name, hold.Island.Name, StringComparison.Ordinal)).ToArray();
+                if (matches.Length != 1)
+                {
+                    result.Rejections.Add(hold.DisplayName + ": " + matches.Length + " loaded islands match " + hold.Island + "; expected one.");
+                    continue;
+                }
+                var island = matches[0];
+                if (Port.ports != null && Port.ports.Any(port => port != null && FindIsland(port.transform) == island))
+                {
+                    result.Rejections.Add(hold.DisplayName + ": island " + hold.Island + " has a registered port.");
+                    continue;
+                }
+                result.Ports.Add(new PortEntry { Island = island, Hold = hold, Identity = hold.Island, DisplayName = hold.DisplayName });
+            }
         }
 
         // Saffron's dormant child has a usable authored pose, but no native berth.

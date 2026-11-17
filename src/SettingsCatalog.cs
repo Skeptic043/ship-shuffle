@@ -45,7 +45,7 @@ namespace ShipShuffle
                         Vanilla = KnownIdentities.IsVanillaPort(p.Identity),
                         Hidden = KnownIdentities.IsHiddenPort(p.Identity)
                     };
-                    SettingsPresentation.Port(row, p.Index);
+                    SettingsPresentation.Port(row, p.Index, p.Hold);
                     return row;
                 })));
                 foreach (var unusable in boats.Unusable.Where(boat => !boat.IntentionalExclusion))

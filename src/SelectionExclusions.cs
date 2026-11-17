@@ -127,8 +127,8 @@ namespace ShipShuffle
             // Keep it out of the editor until both optional groups are enabled.
             if (record.Name == null) return settings.IncludeHiddenPorts && settings.IncludeModPorts;
             if (HiddenRecord(record)) return settings.IncludeHiddenPorts;
-            return settings.IncludeModPorts || KnownIdentities.VanillaPorts.Any(port =>
-                string.Equals(port.Name, record.Name, StringComparison.Ordinal));
+            return settings.IncludeModPorts || KnownIdentities.VanillaPorts.Concat(KnownIdentities.IslandHolds.Select(hold => hold.Island))
+                .Any(port => string.Equals(port.Name, record.Name, StringComparison.Ordinal));
         }
 
         internal static bool HiddenRecord(SelectionExclusions.Record r) =>

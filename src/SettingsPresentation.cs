@@ -61,10 +61,12 @@ namespace ShipShuffle
         // Stock region membership follows New Beginnings SelectionCatalog's
         // KnownPorts at revision 1aba5a09148f9f4a44fe7b754848d93905b617a1.
         // The runtime catalogue decides Vanilla before this display mapping.
-        internal static void Port(SettingsChoice row, int index)
+        internal static void Port(SettingsChoice row, int index, IslandHold hold = null)
         {
             if (row.Hidden) { row.GroupOrder = 5; row.GroupLabel = "Secret destinations"; }
             else if (!row.Vanilla) { row.GroupOrder = 6; row.GroupLabel = "Mod islands"; }
+            else if (hold != null && hold.Emerald) { row.GroupOrder = 1; row.GroupLabel = "Emerald"; }
+            else if (hold != null) { row.GroupOrder = 4; row.GroupLabel = "Small islands"; }
             else if (index >= 0 && index <= 5 || index == 31) { row.GroupOrder = 0; row.GroupLabel = "Al'Ankh"; }
             else if (index >= 9 && index <= 14 || index == 29 || index == 30) { row.GroupOrder = 1; row.GroupLabel = "Emerald"; }
             else if (index >= 15 && index <= 19 || index >= 26 && index <= 28) { row.GroupOrder = 2; row.GroupLabel = "Aestrin"; }

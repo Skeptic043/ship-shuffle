@@ -95,6 +95,13 @@ namespace ShipShuffle
 
         internal static bool TryBuildSite(PortEntry port, out DockSite site, out string reason)
         {
+            if (port.Hold != null)
+            {
+                site = IslandSite(port);
+                reason = site == null ? "Island is missing." : null;
+                if (site != null) site.NoRecovery = true;
+                return site != null;
+            }
             if (!TryBuildDocks(port, out site, out reason)) return false;
             site.Terrains = port.Island.GetComponentsInChildren<Terrain>(true).Where(item => item != null && item.terrainData != null).ToArray();
             if (site.Terrains.Length == 0)
@@ -347,6 +354,14 @@ namespace ShipShuffle
             var centre = HullFootprint.Flat(site.Port.Island.GetPosition());
             input.IslandCentre = centre;
             input.HasIslandCentre = centre.IsFinite;
+            var hold = site.Port.Hold;
+            if (hold != null)
+            {
+                // Island-local like New Beginnings: the position takes the island's
+                // scale, the bow only its rotation.
+                input.FixedCenter = HullFootprint.Flat(site.Island.TransformPoint(new Vector3(hold.CenterX, 0f, hold.CenterZ)));
+                input.FixedForward = HullFootprint.Flat(site.Island.rotation * new Vector3(hold.ForwardX, 0f, hold.ForwardZ));
+            }
             for (var i = 0; i < count; ++i)
             {
                 var cleat = site.IslandCleats[i];

@@ -12,6 +12,17 @@ namespace ShipShuffle
         internal string DisplayName;
     }
 
+    // A portless island destination: its fixed offshore hold in the island's frame.
+    internal sealed class IslandHold
+    {
+        internal Identity Island;
+        internal string DisplayName;
+        internal float CenterX, CenterZ, ForwardX, ForwardZ;
+        internal bool Hidden;
+        // Listed with the Emerald ports rather than the small islands.
+        internal bool Emerald;
+    }
+
     // Every fixed boat and port identity the mod knows, with the per-port
     // rules attached to them. Unity-free; nothing here is read from config.
     internal static class KnownIdentities
@@ -77,7 +88,32 @@ namespace ShipShuffle
             Coffee, MirageMountain, Saffron
         };
 
-        internal static bool IsVanillaPort(Identity port) => VanillaPorts.Contains(port);
+        // ------------------------------------------------------------ islands
+
+        // Sailwind islands without a Port. Each is a destination for one boat,
+        // held offshore at New Beginnings' tested start hold: island-local hull
+        // centre (X, Z) and bow direction, applied through the island transform.
+        internal static readonly IslandHold[] IslandHolds =
+        {
+            Hold(5, "island 5 A (clear mind)", "Isle of Clear Mind", -44f, -12f, .7986f, .6018f),
+            Hold(6, "island 6 A  (lion fang)", "Lion's Fang", -2f, -12f, 1f, 0f),
+            Hold(23, "island 23 M oracle", "Oracle Island", 140f, 64f, -1f, 0f),
+            Hold(39, "island 39 E (onsen)", "Pondering Peak", -139f, -76.5f, -.5f, .866f, emerald: true),
+            Hold(32, "island 32 A (hideout)", "Eleann Island", 60.7f, -77.8f, 1f, 0f, hidden: true),
+            Hold(36, "island 36", "Bone Isle", 502f, 310f, -.3827f, -.9239f, hidden: true)
+        };
+
+        private static IslandHold Hold(int index, string name, string displayName, float x, float z, float forwardX, float forwardZ,
+            bool hidden = false, bool emerald = false) => new IslandHold
+        {
+            Island = new Identity(index, name), DisplayName = displayName, CenterX = x, CenterZ = z,
+            ForwardX = forwardX, ForwardZ = forwardZ, Hidden = hidden, Emerald = emerald
+        };
+
+        internal static IslandHold IslandHoldFor(Identity destination) =>
+            IslandHolds.FirstOrDefault(hold => hold.Island.Equals(destination));
+
+        internal static bool IsVanillaPort(Identity port) => VanillaPorts.Contains(port) || IslandHoldFor(port) != null;
 
         // Gold Rock City, Dragon Cliffs and Fort Aestrin hold up to
         // ShipyardCapacity sale boats when MultipleBoatsAtShipyards is on.
@@ -94,9 +130,11 @@ namespace ShipShuffle
             new HashSet<Tuple<Identity, Identity>>();
 
         // Secret destinations, offered only with IncludeHiddenPorts.
-        internal static bool IsHiddenPort(Identity port) => port.Equals(Chronos) || port.Equals(Saffron);
+        internal static bool IsHiddenPort(Identity port) => port.Equals(Chronos) || port.Equals(Saffron) ||
+            IslandHoldFor(port)?.Hidden == true;
         internal static bool IsHiddenPortName(string name) =>
-            string.Equals(name, Chronos.Name, StringComparison.Ordinal) || string.Equals(name, Saffron.Name, StringComparison.Ordinal);
+            string.Equals(name, Chronos.Name, StringComparison.Ordinal) || string.Equals(name, Saffron.Name, StringComparison.Ordinal) ||
+            IslandHolds.Any(hold => hold.Hidden && string.Equals(name, hold.Island.Name, StringComparison.Ordinal));
 
         // Placement priority only: larger boats remain eligible when needed.
         internal static BoatSize? PreferredMaximumSize(Identity port) => port.Equals(DeadCove) ? BoatSize.Medium : (BoatSize?)null;

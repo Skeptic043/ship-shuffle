@@ -125,7 +125,8 @@ namespace ShipShuffle
             var old = plan;
             // The plan's world pose predates any world shift; its island pose does not.
             var final = BerthResolver.Refreshed(old);
-            var sceneryProblem = LiveScenery.Problem(final.Site, final.Boat, final.Position, final.Rotation);
+            // An island hold is the one tested spot there; scenery never moves it.
+            var sceneryProblem = old.Site.Port.Hold != null ? null : LiveScenery.Problem(final.Site, final.Boat, final.Position, final.Rotation);
             if (sceneryProblem != null)
             {
                 var replacement = Replacement(old);

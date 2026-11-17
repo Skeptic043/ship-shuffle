@@ -54,6 +54,9 @@ namespace ShipShuffle
         // Only Oasis's authored sale-boat side uses its departing bow direction.
         // Its opposite recovery side retains the normal two-direction search.
         internal bool OasisNativeSaleHeading;
+        // Portless island: the one fixed offshore hold (hull centre and bow).
+        internal Vec2? FixedCenter;
+        internal Vec2 FixedForward;
         internal StationPolicy StationPolicy;
         internal StationRegion? StationRegion;
         internal Vec2 BoatPos;
@@ -246,6 +249,29 @@ namespace ShipShuffle
                 NoRecovery = port.NoRecovery, RadialSearch = port.MarkerReference && port.NoDock,
                 OffshoreOnly = port.OffshoreOnly, StationPolicy = port.StationPolicy, StationRegion = port.StationRegion
             };
+            if (port.FixedCenter.HasValue)
+            {
+                var center = port.FixedCenter.Value;
+                var forward = port.FixedForward;
+                if (!center.IsFinite || !forward.IsFinite || forward.Length < 0.5f)
+                {
+                    frame.Reason = "The island's fixed offshore hold is not usable in the horizontal plane.";
+                    return frame;
+                }
+                forward = forward * (1f / forward.Length);
+                frame.NoRecovery = true;
+                frame.Recovery = new DockChain { Ok = true, Order = new int[0], Points = new Vec2[0], R1 = -1, R2 = -1 };
+                frame.Base = new BerthInput
+                {
+                    BoatPos = center, BoatForward = forward, AlternateOffset = new Vec2(0f, 0f), Obstacles = port.Obstacles,
+                    NoRecovery = true, OtherPiers = frame.DockSegments, SolidProblem = port.SolidProblem
+                };
+                frame.StationOrigin = center;
+                frame.StationForward = forward;
+                frame.StationNormals = new[] { forward };
+                frame.Ok = true;
+                return frame;
+            }
             if (!port.NoRecovery || port.MarkerReference)
             {
                 frame.Recovery = DockGeometry.BuildChain(port.Cleats, port.R1, port.R2, port.BoatPos);
@@ -310,6 +336,14 @@ namespace ShipShuffle
                 return result;
             }
             result.Piers.AddRange(frame.Piers);
+            if (port.FixedCenter.HasValue)
+            {
+                var hold = FixedHold(frame.Base, hull, frame.StationOrigin, frame.StationForward);
+                result.Candidates.Add(hold);
+                if (hold.Accepted) result.Best = hold;
+                else result.Reason = hold.Reason;
+                return result;
+            }
             if (!frame.NoRecovery && !port.OffshoreOnly && !port.StationRegion.HasValue)
             {
                 var tier12 = DockGeometry.EvaluateAll(frame.Base, hull).Candidates;
@@ -965,6 +999,25 @@ namespace ShipShuffle
             return candidate;
         }
 
+        // A portless island's tested hold: only other boats can refuse it. Shore,
+        // terrain and departure were settled when the hold was chosen in game.
+        internal static Candidate FixedHold(BerthInput input, HullSpec hull, Vec2 center, Vec2 forward)
+        {
+            var candidate = new Candidate { Tier = 4, Estimated = true, I = -1, J = -1 };
+            if (!center.IsFinite || !forward.IsFinite || forward.Length < 0.5f)
+                return DockGeometry.Reject(candidate, "Station pose is invalid.");
+            forward = forward * (1f / forward.Length);
+            var half = Math.Max(0f, hull.Length * 0.5f - hull.Radius);
+            candidate.Forward = forward;
+            candidate.Direction = forward;
+            candidate.Hull = new Capsule2(center + forward * half, center - forward * half, hull.Radius);
+            if (!DockGeometry.CheckClearances(candidate, input, hull, true)) return candidate;
+            DockGeometry.SetRoot(candidate, input, hull);
+            if (!candidate.Root.IsFinite) return DockGeometry.Reject(candidate, "Station pose produced a non-finite position.");
+            DockGeometry.Accept(candidate, input, "accepted, fixed island hold");
+            return candidate;
+        }
+
         // ------------------------------------------------------------ fixed (new-game validation)
 
         // Re-evaluates a planned moored berth by tier and cleat indexes.
@@ -1025,6 +1078,7 @@ namespace ShipShuffle
             var frame = Frame(port);
             if (!frame.Ok) return DockGeometry.Reject(new Candidate { Tier = 4, Estimated = true }, frame.Reason);
             if (!ValidHull(hull, out var invalid)) return DockGeometry.Reject(new Candidate { Tier = 4, Estimated = true }, invalid);
+            if (port.FixedCenter.HasValue) return FixedHold(frame.Base, hull, center, forward);
             var policyProblem = StationPolicyProblem(frame, hull, center);
             if (policyProblem != null) return DockGeometry.Reject(new Candidate { Tier = 4, Estimated = true }, policyProblem);
             if (frame.StationRegion.HasValue && (!forward.IsFinite || forward.Length < 0.5f ||
