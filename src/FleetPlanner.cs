@@ -111,6 +111,12 @@ namespace ShipShuffle
     {
         internal static void Classify(IList<FleetBoat> boats, IList<FleetPort> ports, FleetSettings settings)
         {
+            ClassifyBoats(boats, settings);
+            ClassifyPorts(boats, ports, settings);
+        }
+
+        internal static void ClassifyBoats(IEnumerable<FleetBoat> boats, FleetSettings settings)
+        {
             foreach (var boat in boats)
             {
                 boat.Eligible = false;
@@ -123,12 +129,16 @@ namespace ShipShuffle
                     boat.Reason = "listed in ExcludedBoats";
                 else { boat.Eligible = true; boat.Reason = "eligible"; }
             }
+        }
+
+        internal static void ClassifyPorts(IEnumerable<FleetBoat> nativeBoats, IList<FleetPort> ports, FleetSettings settings)
+        {
             for (var p = 0; p < ports.Count; ++p)
             {
                 var port = ports[p];
                 // Ineligible residents keep their hulls and cleats. At the
                 // three shipyards they also keep separate resident places.
-                var blockers = boats.Where(boat => !boat.Eligible && boat.Home == p).ToList();
+                var blockers = nativeBoats.Where(boat => !boat.Eligible && boat.Home == p).ToList();
                 var blocker = blockers.FirstOrDefault();
                 port.Fixed = blockers.Count;
                 port.FixedLarge = blockers.Count(boat => boat.Size == BoatSize.Large);

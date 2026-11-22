@@ -26,6 +26,8 @@ namespace ShipShuffle
 
         internal static bool Holds(Rigidbody body) => body != null && Frozen.Contains(body);
 
+        internal static void ReturnedToNativeBerth(Rigidbody body) => Relocated.Remove(body);
+
         internal static PlacementCoordinator Attach(BerthPlan plan)
         {
             var owner = plan.Boat.Boat.gameObject;

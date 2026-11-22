@@ -13,6 +13,7 @@ namespace ShipShuffle
         internal static readonly KeyboardShortcut DumpShortcut = new KeyboardShortcut(KeyCode.F9, KeyCode.LeftControl);
 
         internal readonly ConfigEntry<bool> Enabled;
+        internal readonly ConfigEntry<bool> ShuffleNewlyAddedBoats;
         internal readonly ConfigEntry<int> Seed;
         internal readonly ConfigEntry<bool> IncludeVanillaBoats;
         internal readonly ConfigEntry<bool> IncludeModBoats;
@@ -32,6 +33,9 @@ namespace ShipShuffle
             var menu = new SettingsMenu(this);
             Enabled = config.Bind("General", "Enabled", true,
                 Basic("Shuffle unpurchased sale boats between ports on new games, and re-apply the stored layout when loading saves made with Ship Shuffle.", "Enabled", 100));
+            ShuffleNewlyAddedBoats = config.Bind("General", "ShuffleNewlyAddedBoats", false,
+                Basic("When loading a shuffled save, give newly added sale boats a free berth using the current boat and destination settings.",
+                    "Shuffle newly added boats", 95));
             Seed = config.Bind("General", "Seed", 0,
                 Basic("Random seed for new games. 0 or less picks a new random seed each time. The seed used is written to the log.", "Seed", 20));
             IncludeVanillaBoats = config.Bind("Boats", "IncludeVanillaBoats", true, Basic("Shuffle vanilla boats.", "Include vanilla boats", 90));
@@ -41,7 +45,7 @@ namespace ShipShuffle
             AllowMedium = config.Bind("Boats", "AllowMedium", true, Basic("Shuffle medium boats.", "Medium boats", 60));
             AllowLarge = config.Bind("Boats", "AllowLarge", true, Basic("Shuffle large boats.", "Large boats", 50));
             ExcludedBoats = config.Bind("Boats", "ExcludedBoats", "",
-                new ConfigDescription("Choose boats and destinations for future new games.", null,
+                new ConfigDescription("Choose boats and destinations for future new games and newly added boats.", null,
                     new ConfigurationManagerAttributes { CustomDrawer = menu.Draw, Category = "Options", DispName = "Advanced", Order = 0,
                         HideSettingName = true, HideDefaultButton = true }));
             IncludeHiddenPorts = config.Bind("Ports", "IncludeHiddenPorts", false,

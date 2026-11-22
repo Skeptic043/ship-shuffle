@@ -67,14 +67,14 @@ namespace ShipShuffle
             body.GetComponents<CapsuleCollider>().Where(hull => hull != null && !hull.isTrigger &&
                 (hull.attachedRigidbody == body || !hull.enabled)).ToArray();
 
-        // Every active loaded boat with mooring ropes, at its current pose.
-        internal static List<KeyValuePair<Rigidbody, Obstacle>> AllBoats()
+        // Scene boats with mooring ropes, at their current pose.
+        internal static List<KeyValuePair<Rigidbody, Obstacle>> AllBoats(bool includeInactive = false)
         {
             var result = new List<KeyValuePair<Rigidbody, Obstacle>>();
             foreach (var ropes in Resources.FindObjectsOfTypeAll<BoatMooringRopes>())
             {
                 if (ropes == null || !ropes.gameObject.scene.IsValid() || !ropes.gameObject.scene.isLoaded ||
-                    !ropes.gameObject.activeInHierarchy) continue;
+                    !includeInactive && !ropes.gameObject.activeInHierarchy) continue;
                 var body = ropes.GetComponent<Rigidbody>();
                 if (body == null || result.Exists(pair => pair.Key == body)) continue;
                 var obstacle = new Obstacle { Name = body.name, Root = Flat(body.transform.position) };

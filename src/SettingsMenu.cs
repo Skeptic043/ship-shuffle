@@ -40,7 +40,7 @@ namespace ShipShuffle
                     }
                     if (expanded)
                     {
-                        Note("Selection changes apply to the next new game. They do not reshuffle a saved layout.");
+                        Note("Selections apply to the next new game and to newly added boats when that setting is on.");
                         if (draft == null)
                         {
                             Choose("Boats", true);
@@ -170,7 +170,7 @@ namespace ShipShuffle
             { notice = "Settings changed while this list was open. Cancel and reopen to keep those changes."; return; }
             target.Value = saved;
             draft = null;
-            notice = "Selection saved for the next new game.";
+            notice = "Selection saved.";
         }
     }
 }

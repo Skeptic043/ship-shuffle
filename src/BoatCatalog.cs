@@ -45,6 +45,8 @@ namespace ShipShuffle
         internal readonly List<BoatEntry> Boats = new List<BoatEntry>();
         internal readonly List<string> Rejections = new List<string>();
         internal readonly List<UnusableBoat> Unusable = new List<UnusableBoat>();
+        internal readonly List<Identity> SceneIdentities = new List<Identity>();
+        internal readonly List<SaveableObject> InactiveSaleBoats = new List<SaveableObject>();
 
         private static readonly FieldInfo SaveableField = AccessTools.Field(typeof(PurchasableBoat), "saveable");
         private static readonly FieldInfo PurchaseUiField = AccessTools.Field(typeof(PurchasableBoat), "purchaseUI");
@@ -79,10 +81,17 @@ namespace ShipShuffle
             {
                 try
                 {
-                    if (boat == null || !boat.gameObject.scene.IsValid() || !boat.gameObject.scene.isLoaded ||
-                        (!includeInactive && (!boat.gameObject.activeInHierarchy || !boat.enabled)) || boat.isHouse) continue;
+                    if (boat == null || !boat.gameObject.scene.IsValid() || !boat.gameObject.scene.isLoaded || boat.isHouse) continue;
+                    var active = boat.gameObject.activeInHierarchy && boat.enabled;
                     var saveable = SaveableField.GetValue(boat) as SaveableObject;
-                    if (!IsBoatLike(saveable)) continue;
+                    var sceneObject = saveable != null || active ? saveable : boat.GetComponent<SaveableObject>();
+                    if (!IsBoatLike(sceneObject)) continue;
+                    if (sceneObject.sceneIndex >= 0 && sceneObject.gameObject == boat.gameObject)
+                    {
+                        result.SceneIdentities.Add(new Identity(sceneObject.sceneIndex, boat.gameObject.name));
+                        if (!active && !sceneObject.extraSetting) result.InactiveSaleBoats.Add(sceneObject);
+                    }
+                    if (saveable == null || !active && !includeInactive) continue;
                     var index = saveable.sceneIndex;
                     // Reserve every active boat identity before validation. A
                     // duplicated index makes native save ownership ambiguous.
@@ -191,6 +200,13 @@ namespace ShipShuffle
             }
             result.Boats.Sort((left, right) => left.Index.CompareTo(right.Index));
             return result;
+        }
+
+        internal static bool OwnsSaveSlot(BoatEntry boat)
+        {
+            var manager = SaveLoadManager.instance;
+            var slots = manager != null ? manager.GetCurrentObjects() : null;
+            return slots != null && boat.Index >= 0 && boat.Index < slots.Length && slots[boat.Index] == boat.Saveable;
         }
     }
 }

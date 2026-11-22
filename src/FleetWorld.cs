@@ -81,6 +81,9 @@ namespace ShipShuffle
             ropes == null ? new string[0] : new[] { ropes.mooringFront, ropes.mooringBack }
                 .Where(item => item != null).Select(CleatKey).Distinct().ToArray();
 
+        internal IEnumerable<int> InactiveHomePorts() => KnownBoats.InactiveSaleBoats.Where(boat => boat != null)
+            .Select(boat => HomeOf(boat.GetComponent<BoatMooringRopes>(), boat.transform.position));
+
         internal IEnumerable<BoatEntry> SaleBoats => KnownBoats.Boats;
         internal FleetBoat FindBoat(Identity id) => Boats.FirstOrDefault(item => item.Catalogued && item.Id.Equals(id));
         internal int FindPort(Identity id) => Ports.FindIndex(item => item.Id.Equals(id));

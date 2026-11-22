@@ -101,7 +101,7 @@ namespace ShipShuffle
         // and kept; every other boat is back at its native berth.
         internal static List<BerthPlan> ApplyFleet(IList<FleetMove> moves, ICollection<string> stayingHomes,
             ICollection<string> stayingClaims, Occupancy occupancy, string context, Func<string, int> capacity = null,
-            ICollection<string> stayingLargeHomes = null, Func<string, int> largeCapacity = null)
+            ICollection<string> stayingLargeHomes = null, Func<string, int> largeCapacity = null, bool requireAll = false)
         {
             var entries = new List<Entry>();
             foreach (var move in moves)
@@ -116,7 +116,7 @@ namespace ShipShuffle
                 entry.Move = move;
                 entries.Add(entry);
             }
-            Settle(moves, entries, stayingHomes, stayingClaims, context, capacity, stayingLargeHomes, largeCapacity);
+            Settle(moves, entries, stayingHomes, stayingClaims, context, capacity, stayingLargeHomes, largeCapacity, requireAll);
 
             foreach (var entry in entries)
             {
@@ -134,7 +134,7 @@ namespace ShipShuffle
                 {
                     Drop(entry.Move, context, "release failed: " + exception.Message);
                     Plugin.Instance?.Error(context + ": releasing " + entry.Plan.Boat.Label + " failed.", exception);
-                    Settle(moves, entries, stayingHomes, stayingClaims, context, capacity, stayingLargeHomes, largeCapacity);
+                    Settle(moves, entries, stayingHomes, stayingClaims, context, capacity, stayingLargeHomes, largeCapacity, requireAll);
                 }
             }
 
@@ -149,7 +149,7 @@ namespace ShipShuffle
                 {
                     Drop(entry.Move, context, "placement failed: " + exception.Message);
                     Plugin.Instance?.Error(context + ": placing " + entry.Plan.Boat.Label + " failed.", exception);
-                    Settle(moves, entries, stayingHomes, stayingClaims, context, capacity, stayingLargeHomes, largeCapacity);
+                    Settle(moves, entries, stayingHomes, stayingClaims, context, capacity, stayingLargeHomes, largeCapacity, requireAll);
                 }
             }
 
@@ -186,10 +186,13 @@ namespace ShipShuffle
         // already tied) is free again when its owner returns.
         private static void Settle(IList<FleetMove> moves, List<Entry> entries, ICollection<string> stayingHomes,
             ICollection<string> stayingClaims, string context, Func<string, int> capacity,
-            ICollection<string> stayingLargeHomes, Func<string, int> largeCapacity)
+            ICollection<string> stayingLargeHomes, Func<string, int> largeCapacity, bool requireAll)
         {
             foreach (var move in FleetPlanner.Cascade(moves, stayingHomes, stayingClaims, capacity, stayingLargeHomes, largeCapacity))
                 Plugin.Instance?.Warn(context + ": " + move.Boat + " stays at its native berth (" + move.Reason + ").");
+            if (requireAll && moves.Any(move => move.Dropped))
+                foreach (var move in moves.Where(move => !move.Dropped))
+                    Drop(move, context, "a linked move could not be completed");
             var affected = entries.Where(item => item.Move.Dropped && item.Released && !item.Restored).ToList();
             if (affected.Count == 0) return;
             try
@@ -329,6 +332,7 @@ namespace ShipShuffle
                 boat.Body.velocity = entry.OldVelocity;
                 boat.Body.angularVelocity = entry.OldAngularVelocity;
                 if (entry.AnchorBody != null) entry.AnchorBody.position = entry.OldAnchorPosition;
+                PlacementCoordinator.ReturnedToNativeBerth(boat.Body);
             }
             if (entry.AnchorReset && entry.Anchor != null) entry.Anchor.OnLoad(false, entry.OldAnchorLength);
             if (entry.Moved) Physics.SyncTransforms();

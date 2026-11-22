@@ -443,9 +443,9 @@ namespace ShipShuffle
         }
 
         internal static TierEvaluation Evaluate(DockSite site, BoatEntry boat, Occupancy occupancy, IEnumerable<BoatEntry> saleBoats,
-            FleetSettings settings, IEnumerable<PlannedBerth> planned = null)
+            FleetSettings settings, IEnumerable<PlannedBerth> planned = null, bool liveScenery = false)
         {
-            var input = MakePortInput(site, boat, occupancy, saleBoats, planned);
+            var input = MakePortInput(site, boat, occupancy, saleBoats, planned, liveScenery);
             var evaluation = BerthTiers.Evaluate(input, boat.Spec);
             var plugin = Plugin.Instance;
             if (plugin == null || !plugin.DebugEnabled) return evaluation;

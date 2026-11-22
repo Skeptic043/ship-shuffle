@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace ShipShuffle
@@ -51,8 +52,32 @@ namespace ShipShuffle
     internal static class AssignmentStore
     {
         internal const string Key = "ShipShuffle";
+        internal const string RosterKey = "ShipShuffle.BoatRoster";
         private const string Version = "1";
+        private const string RosterVersion = "1";
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
+
+        // The original scene roster is independent of the layout's move records.
+        // Reject an unreadable roster as a whole. A partial roster could make an old boat look new.
+        internal static string FormatRoster(IEnumerable<Identity> boats) => string.Join("\n", new[] { RosterVersion }.Concat(
+            boats.Distinct().OrderBy(boat => boat.Index).ThenBy(boat => boat.Name, StringComparer.Ordinal)
+                .Select(boat => Join(boat.Index.ToString(Invariant), boat.Name))));
+
+        internal static HashSet<Identity> ParseRoster(string text)
+        {
+            if (text == null) return null;
+            var lines = text.Split('\n');
+            if (lines.Length < 2 || lines[0] != RosterVersion) return null;
+            var boats = new HashSet<Identity>();
+            for (var i = 1; i < lines.Length; ++i)
+            {
+                var fields = Split(lines[i]);
+                if (fields == null || fields.Length != 2 || string.IsNullOrEmpty(fields[1]) || Join(fields) != lines[i] ||
+                    !int.TryParse(fields[0], NumberStyles.None, Invariant, out var index) ||
+                    !boats.Add(new Identity(index, fields[1]))) return null;
+            }
+            return boats;
+        }
 
         internal static string Format(AssignmentDocument document)
         {

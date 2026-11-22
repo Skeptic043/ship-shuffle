@@ -36,6 +36,7 @@ namespace ShipShuffle
                 try
                 {
                     Cancel();
+                    GameState.modData?.Remove(AssignmentStore.RosterKey);
                     if (GameState.modData != null && GameState.modData.Remove(AssignmentStore.Key))
                         Plugin.Instance?.DebugLog("New game: cleared stale Ship Shuffle assignment data.");
                 }
@@ -84,6 +85,7 @@ namespace ShipShuffle
                 try
                 {
                     Cancel();
+                    GameState.modData?.Remove(AssignmentStore.RosterKey);
                     GameState.modData?.Remove(AssignmentStore.Key);
                 }
                 catch (Exception exception)
@@ -183,7 +185,7 @@ namespace ShipShuffle
                 return;
             }
             foreach (var error in errors) plugin.Warn("Load: " + error);
-            FleetGenerator.ApplyStored(document);
+            FleetGenerator.ApplyStored(document, allowNewBoats: errors.Count == 0);
         }
     }
 }

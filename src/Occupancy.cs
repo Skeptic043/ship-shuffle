@@ -25,16 +25,16 @@ namespace ShipShuffle
 
         // relocated: boats already on their new berths. They stay obstacles
         // and keep the springs they hold, but their authored claims are void.
-        internal static Occupancy Build(IEnumerable<Rigidbody> moving, IEnumerable<Rigidbody> relocated = null)
+        internal static Occupancy Build(IEnumerable<Rigidbody> moving, IEnumerable<Rigidbody> relocated = null, bool includeInactive = false)
         {
             var result = new Occupancy(moving);
             var away = new HashSet<Rigidbody>(relocated ?? Enumerable.Empty<Rigidbody>());
-            foreach (var pair in HullFootprint.AllBoats())
+            foreach (var pair in HullFootprint.AllBoats(includeInactive))
                 if (!result.Moving.Contains(pair.Key)) result.obstacles.Add(pair);
             foreach (var ropes in Resources.FindObjectsOfTypeAll<BoatMooringRopes>())
             {
                 if (ropes == null || !ropes.gameObject.scene.IsValid() || !ropes.gameObject.scene.isLoaded ||
-                    !ropes.gameObject.activeInHierarchy) continue;
+                    !includeInactive && !ropes.gameObject.activeInHierarchy) continue;
                 var body = ropes.GetComponent<Rigidbody>();
                 if (body != null && (result.Moving.Contains(body) || away.Contains(body))) continue;
                 foreach (var mooring in new[] { ropes.mooringFront, ropes.mooringBack })
@@ -53,6 +53,9 @@ namespace ShipShuffle
             foreach (var pair in obstacles) if (pair.Key != boat) result.Add(pair.Value);
             return result;
         }
+
+        internal bool HullOverlaps(Rigidbody body, Candidate berth) => obstacles.Any(pair => pair.Key == body &&
+            pair.Value.Measurable && pair.Value.Hull.IsValid && DockGeometry.CapsuleGap(berth.Hull, pair.Value.Hull) < 0f);
 
         // Why boat may not tie to cleat, or null (CleatAccess.Check). claimed:
         // an authored claim blocks it.

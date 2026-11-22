@@ -26,6 +26,8 @@ namespace ShipShuffle
             // held instead of moored.
             internal DockSite Site;
             internal string[] CleatKeys = new string[0];
+            internal GPButtonDockMooring[] StoredCleats = new GPButtonDockMooring[0];
+            internal Capsule2? SavedHull;
             // Set when no berth was left for it at a shared port; it stays home.
             internal string PreDrop;
 
@@ -180,6 +182,8 @@ namespace ShipShuffle
             plugin.Report("New game: seed " + seed + (config.Seed.Value > 0 ? " (from config)" : " (random)") + "; " +
                 document.Records.Count + " boat(s) moved, " + (world.Boats.Count - document.Records.Count) + " stayed.");
             ReportPortCounts(world, pending, "New game");
+            if (GameState.modData != null && world.KnownBoats.SceneIdentities.Count > 0)
+                GameState.modData[AssignmentStore.RosterKey] = AssignmentStore.FormatRoster(world.KnownBoats.SceneIdentities);
             return document;
         }
 
@@ -274,10 +278,11 @@ namespace ShipShuffle
             plugin.DebugLog(context + ": sale boats per port (" + (restoring ? "boats" : "boats/capacity") + "): " + string.Join(", ", parts.ToArray()) + ".");
         }
 
-        internal static void ApplyStored(AssignmentDocument document)
+        internal static void ApplyStored(AssignmentDocument document, bool allowNewBoats = true)
         {
             var plugin = Plugin.Instance;
             var world = FleetWorld.Survey();
+            var storedCount = document.Records.Count;
             if (plugin.DebugEnabled)
             {
                 foreach (var entry in world.KnownBoats.Boats)
@@ -316,7 +321,11 @@ namespace ShipShuffle
                     LocalPosition = new Vector3(record.LocalX, 0f, record.LocalZ), LocalYaw = record.YawDegrees
                 });
             }
-            var placed = ValidateAndApply(world, null, pending, "Load", true);
+            var additions = FindNewBoats(world, document, allowNewBoats, out var settings);
+            if (additions.Count == 0)
+                ValidateAndApply(world, null, pending, "Load", restoring: true);
+            else
+                RestoreWithNewBoats(world, document, pending, additions, settings);
             ArmSaleRig(world);
             if (plugin.DebugEnabled)
             {
@@ -324,8 +333,224 @@ namespace ShipShuffle
                     plugin.DebugLog("Load: moved " + item.Entry.Label + " to " + item.Plan.Site.Port.Label + ", " + item.Plan.Describe() + ".");
                 plugin.DebugLog("Load: Scrambled Seas installed: " + plugin.ScrambledSeasInstalled + ".");
             }
-            plugin.Report("Load: applied " + placed + " of " + document.Records.Count + " stored assignment(s) (seed " + document.Seed + ").");
+            var appended = document.Records.Count - storedCount;
+            plugin.Report("Load: applied " + (pending.Count(item => item.Plan != null) - appended) + " of " + storedCount +
+                " stored assignment(s) (seed " + document.Seed + ").");
             ReportPortCounts(world, pending, "Load", true);
+        }
+
+        private static List<FleetBoat> FindNewBoats(FleetWorld world, AssignmentDocument document, bool allowNewBoats, out FleetSettings settings)
+        {
+            settings = null;
+            var additions = new List<FleetBoat>();
+            if (!allowNewBoats || GameState.modData == null) return additions;
+
+            if (!GameState.modData.TryGetValue(AssignmentStore.RosterKey, out var text))
+            {
+                if (world.KnownBoats.SceneIdentities.Count > 0)
+                {
+                    GameState.modData[AssignmentStore.RosterKey] = AssignmentStore.FormatRoster(world.KnownBoats.SceneIdentities);
+                    Plugin.Instance.DebugLog("Load: recorded the current boat roster for this older layout.");
+                }
+                return additions;
+            }
+            var config = Plugin.Instance.Settings;
+            if (!config.ShuffleNewlyAddedBoats.Value) return additions;
+
+            var roster = AssignmentStore.ParseRoster(text);
+            if (roster == null)
+            {
+                Plugin.Instance.Warn("Load: the saved boat roster could not be read. Newly added boats stay at their native berths.");
+                return additions;
+            }
+            // Native saves own slots by index alone. Reserve an old index even
+            // if its provider is absent or a different boat now uses that number.
+            var knownIndexes = new HashSet<int>(roster.Select(boat => boat.Index).Concat(document.Records.Select(record => record.BoatIndex)));
+            // Some providers choose a free index at spawn. A known root name
+            // can be the same boat registered under a different index.
+            var knownNames = new HashSet<string>(roster.Select(boat => boat.Name).Concat(document.Records.Select(record => record.BoatName)),
+                StringComparer.Ordinal);
+            var ambiguous = new HashSet<int>(world.KnownBoats.SceneIdentities.GroupBy(boat => boat.Index)
+                .Where(group => group.Count() > 1).Select(group => group.Key));
+            additions.AddRange(world.Boats.Where(boat => boat.Catalogued && !knownIndexes.Contains(boat.Id.Index) &&
+                !knownNames.Contains(boat.Id.Name) && !ambiguous.Contains(boat.Id.Index) && BoatCatalog.OwnsSaveSlot((BoatEntry)boat.Tag)));
+            if (additions.Count == 0) return additions;
+
+            var errors = new List<string>();
+            settings = config.ReadFleetSettings(errors);
+            foreach (var error in errors) Plugin.Instance.Warn("Config: " + error);
+            FleetPlanner.ClassifyBoats(world.Boats, settings);
+            return additions;
+        }
+
+        private static void RestoreWithNewBoats(FleetWorld world, AssignmentDocument document, List<Pending> stored,
+            List<FleetBoat> additions, FleetSettings settings)
+        {
+            var plugin = Plugin.Instance;
+            var blocked = new Dictionary<Pending, List<FleetBoat>>();
+            var native = Occupancy.Build(stored.Select(item => item.Entry.Body));
+            foreach (var item in stored)
+            {
+                try
+                {
+                    var plan = StoredPlan(item, native, report: false);
+                    item.SavedHull = plan.Candidate.Hull;
+                    var blockers = additions.Where(boat =>
+                    {
+                        var body = ((BoatEntry)boat.Tag).Body;
+                        return native.HullOverlaps(body, plan.Candidate) || item.CleatKeys.Any(boat.Claims.Contains) ||
+                            item.StoredCleats.Any(cleat => cleat.spring != null && cleat.spring.connectedBody == body);
+                    }).ToList();
+                    if (blockers.Count == 0) continue;
+                    blocked.Add(item, blockers);
+                    plugin.DebugLog("Load: waiting to restore " + item.Boat.Label + " until its saved berth is freed.");
+                }
+                catch (Exception exception)
+                {
+                    // The usual restore path reports a failed stored plan.
+                    plugin.DebugLog("Load: could not preview the saved berth for " + item.Boat.Label + " (" + exception.Message + ").");
+                }
+            }
+            ValidateAndApply(world, null, stored.Where(item => !blocked.ContainsKey(item)).ToList(), "Load", restoring: true);
+            var relocated = stored.Where(item => item.Plan != null).ToDictionary(item => item.Boat, item => item.Plan);
+
+            // Keep other saved destinations available if their unsold boat or port comes back.
+            var unavailablePorts = new HashSet<int>(document.Records.Where(record => !stored.Any(item => item.Entry.Index == record.BoatIndex) &&
+                !world.KnownBoats.Boats.Any(boat => boat.Purchased && boat.Index == record.BoatIndex && boat.IdentityName == record.BoatName))
+                .Select(record => world.FindPort(new Identity(record.PortIndex, record.PortName)))
+                .Concat(world.InactiveHomePorts()));
+            var random = new System.Random(document.Seed);
+            FleetPlanner.Shuffle(additions, random);
+            var recoveredStoredBerth = false;
+            foreach (var boat in additions.Where(boat => boat.Eligible).OrderByDescending(boat => boat.Size))
+            {
+                var toRestore = stored.Where(item => item.Plan == null && blocked.TryGetValue(item, out var blockers) && blockers.Contains(boat)).ToList();
+                Pending placement;
+                try
+                {
+                    placement = PlaceNewBoat(world, settings, boat, relocated, toRestore,
+                        stored.Where(item => item.Plan == null).ToList(), unavailablePorts, random);
+                }
+                catch (Exception exception)
+                {
+                    plugin.Warn("Load: could not place added boat " + boat.Label + " (" + exception.Message + ").");
+                    continue;
+                }
+                if (placement == null)
+                {
+                    plugin.DebugLog("Load: no safe shuffle berth for " + boat.Label + ". It stays native and can retry on another load.");
+                    continue;
+                }
+                recoveredStoredBerth |= toRestore.Count > 0;
+                document.Records.Add(ToRecord(placement.Plan));
+                GameState.modData[AssignmentStore.Key] = AssignmentStore.Format(document);
+                stored.Add(placement);
+                plugin.Report("Load: shuffled new boat " + boat.Label + " to " + placement.Plan.Site.Port.Label + ".");
+            }
+            // A restored boat can free its own authored cleats for another saved move.
+            if (recoveredStoredBerth)
+                ValidateAndApply(world, null, stored.Where(item => item.Plan == null && !blocked.ContainsKey(item)).ToList(),
+                    "Load", restoring: true, relocated: relocated);
+            foreach (var pair in blocked.Where(pair => pair.Key.Plan == null))
+                plugin.Warn("Load: saved berth for " + pair.Key.Boat.Label + " is blocked by " +
+                    string.Join(", ", pair.Value.Select(boat => boat.Label)) + ". Its assignment is kept for a later load.");
+        }
+
+        private static Pending PlaceNewBoat(FleetWorld world, FleetSettings settings, FleetBoat boat,
+            Dictionary<FleetBoat, BerthPlan> relocated, List<Pending> toRestore, List<Pending> unrestored,
+            HashSet<int> unavailablePorts, System.Random random)
+        {
+            var entry = (BoatEntry)boat.Tag;
+            var native = world.Boats.Where(other => !relocated.ContainsKey(other)).ToList();
+            FleetPlanner.ClassifyPorts(native, world.Ports, settings);
+            var ownedLargeHomes = OwnedLargeHomes(world).ToList();
+            var reservedPorts = new HashSet<int>(unavailablePorts.Concat(unrestored.Select(item => item.Port)));
+            var ports = Enumerable.Range(0, world.Ports.Count).Where(p =>
+            {
+                var port = world.Ports[p];
+                if (reservedPorts.Contains(p) || !FleetPlanner.CanReceive(boat, p, port, settings, out _, includeOverflow: true)) return false;
+                var residents = native.Where(other => other.Home == p).Select(other => other.Size).Concat(relocated
+                    .Where(pair => pair.Value.Site.Port.Identity.Equals(port.Id)).Select(pair => pair.Key.Size)).ToList();
+                return residents.Count < port.Capacity && FleetPlanner.SharedLargeArrivalsAllowed(port,
+                    residents.Count(size => size == BoatSize.Large) + ownedLargeHomes.Count(home => home == p), boat.Size == BoatSize.Large ? 1 : 0);
+            }).ToList();
+            if (ports.Count == 0) return null;
+            FleetPlanner.Shuffle(ports, random);
+            var reservedCleats = new HashSet<string>(unrestored.SelectMany(item => item.CleatKeys), StringComparer.Ordinal);
+            var reservedHulls = unrestored.Where(item => item.SavedHull.HasValue).Select(item => item.SavedHull.Value).ToList();
+
+            var moving = new HashSet<FleetBoat>(toRestore.Select(item => item.Boat)) { boat };
+            var occupancy = Occupancy.Build(toRestore.Select(item => item.Entry.Body).Concat(new[] { entry.Body }),
+                relocated.Values.Select(plan => plan.Boat.Body), includeInactive: true);
+            var stayingClaims = native.Where(other => !moving.Contains(other)).SelectMany(other => other.Claims).ToList();
+            var moves = new List<FleetMove>();
+            foreach (var item in toRestore)
+            {
+                var plan = StoredPlan(item, occupancy, report: false);
+                if (item.CleatKeys.Any(stayingClaims.Contains) || BerthResolver.Overlaps(occupancy, item.Entry, plan.Candidate) != null ||
+                    LiveScenery.Ready(item.Site) && LiveScenery.Problem(item.Site, item.Entry, plan.Position, plan.Rotation) != null)
+                    return null;
+                item.Move = CreateMove(world, item);
+                SetMovePlan(item, plan);
+                moves.Add(item.Move);
+            }
+
+            foreach (var p in ports.OrderByDescending(p => world.Ports[p].Receiving).ThenBy(p =>
+            {
+                var preferred = KnownIdentities.PreferredMaximumSize(world.Ports[p].Id);
+                return !preferred.HasValue ? 0 : boat.Size <= preferred.Value ? -1 : 1;
+            }))
+            {
+                BerthPlan plan;
+                try
+                {
+                    var site = world.Sites[p];
+                    var best = BerthResolver.Evaluate(site, entry, occupancy, world.SaleBoats, settings,
+                        liveScenery: LiveScenery.Ready(site)).Best;
+                    if (best == null || reservedHulls.Any(hull => DockGeometry.CapsuleGap(best.Hull, hull) < DockGeometry.BoatGap)) continue;
+                    plan = BerthResolver.MakePlan(site, entry, best);
+                    if (!plan.Held && (reservedCleats.Contains(FleetWorld.CleatKey(plan.Front.transform)) ||
+                        reservedCleats.Contains(FleetWorld.CleatKey(plan.Back.transform)))) continue;
+                    if (!BoatRelocator.TryCheckPreconditions(plan, occupancy, out _)) continue;
+                }
+                catch (Exception exception)
+                {
+                    Plugin.Instance.Warn("Load: evaluating " + boat.Label + " at " + world.Ports[p].Label + " failed: " + exception.Message);
+                    continue;
+                }
+                var addition = new Pending { Boat = boat, Entry = entry, Port = p };
+                addition.Move = CreateMove(world, addition);
+                SetMovePlan(addition, plan);
+                moves.Insert(0, addition.Move);
+                // A boat vacating a saved berth and the boat returning there must move together.
+                // If either move fails, use the existing relocation rollback for both.
+                var placed = BoatRelocator.ApplyFleet(moves, new string[0], stayingClaims, occupancy, "Load", _ => int.MaxValue,
+                    requireAll: toRestore.Count > 0);
+                if (!placed.Contains(plan)) return null;
+
+                addition.Plan = plan;
+                relocated.Add(boat, plan);
+                foreach (var item in toRestore)
+                {
+                    item.Plan = (BerthPlan)item.Move.Tag;
+                    relocated.Add(item.Boat, item.Plan);
+                }
+                return addition;
+            }
+            return null;
+        }
+
+        private static FleetMove CreateMove(FleetWorld world, Pending item) => new FleetMove
+        {
+            Boat = item.Boat.Label, Home = world.PortKey(item.Boat.Home), Target = world.PortKey(item.Port),
+            Claims = item.Boat.Claims, Size = item.Boat.Size
+        };
+
+        private static void SetMovePlan(Pending item, BerthPlan plan)
+        {
+            item.Move.Tag = plan;
+            item.Move.TargetCleats = plan.Restored ? item.CleatKeys : plan.Held ? new string[0]
+                : new[] { FleetWorld.CleatKey(plan.Front.transform), FleetWorld.CleatKey(plan.Back.transform) };
         }
 
         // The placement as it was made: tier, cleats and the root pose in the
@@ -375,10 +600,8 @@ namespace ShipShuffle
         // cleats when both resolve to a spring no staying boat holds;
         // otherwise held (station-kept) at the same pose. No clearance or
         // geometry checks: the layout passed them when it was generated.
-        private static bool TryStoredPlan(Pending item, Occupancy occupancy, out BerthPlan plan, out string reason)
+        private static BerthPlan StoredPlan(Pending item, Occupancy occupancy, bool report = true)
         {
-            plan = null;
-            reason = null;
             var site = item.Site;
             var entry = item.Entry;
             BerthResolver.StationPose(site, item.LocalPosition, item.LocalYaw, out var position, out var rotation);
@@ -391,7 +614,8 @@ namespace ShipShuffle
             {
                 var frontProblem = BerthResolver.StoredCleat(site, item.FrontId, occupancy, entry.Body, out front, out var frontPosition);
                 var backProblem = BerthResolver.StoredCleat(site, item.BackId, occupancy, entry.Body, out back, out var backPosition);
-                item.CleatKeys = new[] { front, back }.Where(cleat => cleat != null).Select(cleat => FleetWorld.CleatKey(cleat.transform)).ToArray();
+                item.StoredCleats = new[] { front, back }.Where(cleat => cleat != null).ToArray();
+                item.CleatKeys = item.StoredCleats.Select(cleat => FleetWorld.CleatKey(cleat.transform)).ToArray();
                 unusable = frontProblem ?? backProblem;
                 if (unusable == null)
                 {
@@ -401,15 +625,14 @@ namespace ShipShuffle
             }
             var candidate = BerthTiers.StoredBerth(entry.Spec, root, forward, item.Tier, item.Side, frontAt, backAt, out var fallback);
             var plugin = Plugin.Instance;
-            if (candidate.Tier == 4 && item.Tier != 4)
+            if (report && candidate.Tier == 4 && item.Tier != 4)
                 plugin?.DebugLog("Load: " + entry.Label + " is held at its stored pose instead of moored (" + (unusable ?? fallback) + ").");
-            if (plugin != null && plugin.DebugEnabled)
+            if (report && plugin != null && plugin.DebugEnabled)
             {
                 var overlaps = BerthResolver.Overlaps(occupancy, entry, candidate);
                 if (overlaps != null) plugin.DebugLog("Load: " + entry.Label + " is placed at its stored pose overlapping " + overlaps + ".");
             }
-            plan = BerthResolver.MakeStoredPlan(site, entry, candidate, front, back, item.FrontId, item.BackId, item.LocalPosition, item.LocalYaw);
-            return true;
+            return BerthResolver.MakeStoredPlan(site, entry, candidate, front, back, item.FrontId, item.BackId, item.LocalPosition, item.LocalYaw);
         }
 
         // Re-resolves one fresh planned berth under the current occupancy.
@@ -472,22 +695,18 @@ namespace ShipShuffle
         // before it there), cascade stay-home and capacity conflicts, and
         // repeat until stable; then move the fleet. Returns the number of
         // boats placed. restoring (load): a saved placement is put back at its
-        // stored pose (TryStoredPlan) instead of re-resolved, and the cascade
+        // stored pose (StoredPlan) instead of re-resolved, and the cascade
         // applies no place or Large limit: only a berth that a boat which
         // stayed still holds (its claimed cleats) or a duplicate cleat drops it.
         private static int ValidateAndApply(FleetWorld world, FleetSettings settings, List<Pending> pending,
-            string context, bool restoring = false)
+            string context, bool restoring = false, Dictionary<FleetBoat, BerthPlan> relocated = null)
         {
             var plugin = Plugin.Instance;
             if (!restoring && settings == null) throw new ArgumentNullException(nameof(settings));
             Diagnostics.MooringCensus(world.SaleBoats, context + " before validation");
             foreach (var item in pending)
             {
-                item.Move = new FleetMove
-                {
-                    Boat = item.Boat.Label, Home = world.PortKey(item.Boat.Home), Target = world.PortKey(item.Port),
-                    Claims = item.Boat.Claims, Size = item.Boat.Size
-                };
+                item.Move = CreateMove(world, item);
                 if (item.PreDrop == null) continue;
                 item.Move.Dropped = true;
                 item.Move.Reason = item.PreDrop;
@@ -522,20 +741,20 @@ namespace ShipShuffle
             while (true)
             {
                 var active = pending.Where(item => !item.Move.Dropped).ToList();
-                occupancy = Occupancy.Build(active.Select(item => item.Entry.Body));
+                occupancy = Occupancy.Build(active.Select(item => item.Entry.Body), relocated?.Values.Select(plan => plan.Boat.Body));
                 var planned = new Dictionary<int, List<PlannedBerth>>();
                 var failed = false;
                 foreach (var item in active)
                 {
                     BerthPlan plan = null;
-                    string reason;
+                    string reason = null;
                     if (!planned.TryGetValue(item.Port, out var before)) planned[item.Port] = before = new List<PlannedBerth>();
                     try
                     {
-                        if (restoring ? TryStoredPlan(item, occupancy, out plan, out reason)
-                            : TryResolve(world.Sites[item.Port], item.Entry, occupancy, world.SaleBoats, item.Tier, item.FrontId,
-                                item.BackId, item.Side, item.LocalPosition, item.LocalYaw, before, out plan, out reason))
-                            BoatRelocator.TryCheckPreconditions(plan, occupancy, out reason);
+                        if (restoring) plan = StoredPlan(item, occupancy);
+                        else TryResolve(world.Sites[item.Port], item.Entry, occupancy, world.SaleBoats, item.Tier, item.FrontId,
+                            item.BackId, item.Side, item.LocalPosition, item.LocalYaw, before, out plan, out reason);
+                        if (plan != null) BoatRelocator.TryCheckPreconditions(plan, occupancy, out reason);
                     }
                     catch (Exception exception)
                     {
@@ -543,9 +762,7 @@ namespace ShipShuffle
                     }
                     if (reason == null)
                     {
-                        item.Move.Tag = plan;
-                        item.Move.TargetCleats = restoring ? item.CleatKeys : plan.Held ? new string[0]
-                            : new[] { FleetWorld.CleatKey(plan.Front.transform), FleetWorld.CleatKey(plan.Back.transform) };
+                        SetMovePlan(item, plan);
                         before.Add(new PlannedBerth { Boat = item.Entry, Candidate = plan.Candidate });
                         continue;
                     }
@@ -554,7 +771,8 @@ namespace ShipShuffle
                     plugin.Warn(context + ": " + item.Boat.Label + " stays at its native berth (" + item.Move.Reason + ").");
                     failed = true;
                 }
-                var staying = world.Boats.Where(boat => !pending.Any(item => item.Boat == boat && !item.Move.Dropped)).ToList();
+                var staying = world.Boats.Where(boat => (relocated == null || !relocated.ContainsKey(boat)) &&
+                    !pending.Any(item => item.Boat == boat && !item.Move.Dropped)).ToList();
                 claims = new HashSet<string>(staying.SelectMany(boat => boat.Claims), StringComparer.Ordinal);
                 var dropped = FleetPlanner.Cascade(moves, homes, claims, capacity, largeHomes, largeCapacity);
                 foreach (var move in dropped)

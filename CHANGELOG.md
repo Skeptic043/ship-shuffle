@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+### Added
+
+- Add `Shuffle newly added boats`, off by default. With the setting enabled, newly added boats can be shuffled to free locations when you load a previously shuffled save
+
 ## 1.0.3
 
 ### Added

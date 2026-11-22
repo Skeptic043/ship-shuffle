@@ -17,7 +17,7 @@ namespace ShipShuffle
     {
         public const string Id = "com.skeptic043.sailwind.shipshuffle";
         // Bump on every user-facing build.
-        public const string Version = "1.0.3";
+        public const string Version = "1.0.4";
         internal const string ScrambledSeasId = "com.nandbrew.scrambledseas";
         internal const string NewBeginningsId = "com.skeptic043.sailwind.newbeginnings";
 
